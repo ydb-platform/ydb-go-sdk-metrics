@@ -19,14 +19,14 @@ const (
 	tablePoolNativeAPIEvents
 	tablePoolYdbSqlAPIEvents
 
-	TableQueryEvents = TableSessionEvents | tableSessionQueryEvents
-	TableStreamEvents = TableSessionEvents | tableSessionQueryEvents | tableSessionQueryStreamEvents
+	TableQueryEvents       = TableSessionEvents | tableSessionQueryEvents
+	TableStreamEvents      = TableSessionEvents | tableSessionQueryEvents | tableSessionQueryStreamEvents
 	TableTransactionEvents = TableSessionEvents | tableSessionTransactionEvents
-	TablePoolEvents = tablePoolLifeCycleEvents | tablePoolRetryEvents | tablePoolSessionLifeCycleEvents | tablePoolCommonAPIEvents | tablePoolNativeAPIEvents | tablePoolYdbSqlAPIEvents
+	TablePoolEvents        = tablePoolLifeCycleEvents | tablePoolRetryEvents | tablePoolSessionLifeCycleEvents | tablePoolCommonAPIEvents | tablePoolNativeAPIEvents | tablePoolYdbSqlAPIEvents
 )
 
 type sessionsUse struct {
-	m sync.Mutex
+	m   sync.Mutex
 	use map[string]int
 }
 
@@ -43,7 +43,6 @@ func (s *sessionsUse) Pop(id string) int {
 	s.m.Unlock()
 	return use
 }
-
 
 // Table makes trace.ClientTrace with metrics publishing
 func Table(c Config) trace.Table {
@@ -89,6 +88,10 @@ func Table(c Config) trace.Table {
 			}
 		}
 		t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
+			gauge(
+				name(TableNameSession),
+				name(NameBalance),
+			).Dec()
 			start := time.Now()
 			return func(info trace.SessionDeleteDoneInfo) {
 				gauge(
@@ -101,10 +104,6 @@ func Table(c Config) trace.Table {
 					name(NameDelete),
 					name(NameTotal),
 				).Inc()
-				gauge(
-					name(TableNameSession),
-					name(NameBalance),
-				).Dec()
 				if info.Error != nil {
 					gauge(
 						name(TableNameSession),
