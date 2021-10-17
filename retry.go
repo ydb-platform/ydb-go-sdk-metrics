@@ -1,4 +1,4 @@
-package metrics
+package sensors
 
 //// RetryTrace makes table.RetryTrace with metrics publishing
 //func RetryTrace(c Config) trace.RetryTrace {

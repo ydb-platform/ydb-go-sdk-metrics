@@ -1,285 +1,165 @@
-package metrics
+package sensors
 
 import (
-	"github.com/ydb-platform/ydb-go-sdk/v3"
+	"context"
+	"errors"
+	"fmt"
+	"path"
 	"strings"
-	"sync"
+
+	"github.com/ydb-platform/ydb-go-sdk/v3"
+)
+
+type Label struct {
+	Tag   string
+	Value string
+}
+
+const (
+	TagVersion    = "sdk"
+	TagCall       = "call"
+	TagMethod     = "method"
+	TagError      = "error"
+	TagErrCode    = "errCode"
+	TagAddress    = "address"
+	TagDataCenter = "destination"
+	TagState      = "state"
+	TagIdempotent = "idempotent"
+	TagSuccess    = "success"
+	TagInternal   = "internal"
 )
 
 type Name string
 
-type Type int
-
 const (
-	NameError = Type(iota)
-	NameUsed
-	NameAttempts
-	NameLatency
-	NameMin
-	NameMax
-	NameTotal
-	NameInProgress
-	NameBalance
-	NameInFlight
-	NameStatus
-	NameLocal
-	NameSet
-	NameIdempotent
-	NameNonIdempotent
-	NameNew
-	NameDelete
-	NameClose
-
-	DriverName
-	DriverNameConn
-	DriverNameConnDial
-	DriverNameConnInvoke
-	DriverNameConnStream
-	DriverNameConnStreamRecv
-	DriverNameCluster
-	DriverNamePessimize
-	DriverNameInsert
-	DriverNameUpdate
-	DriverNameRemove
-	DriverNameGet
-	DriverNameGetCredentials
-	DriverNameDiscovery
-	DriverNameDiscoveryEndpoints
-
-	TableName
-	TableNameSession
-	TableNameKeepAlive
-	TableNameQuery
-	TableNamePrepareData
-	TableNameExecuteData
-	TableNameStream
-	TableNameStreamReadTable
-	TableNameStreamExecuteScan
-	TableNameTransaction
-	TableNameBeginTransaction
-	TableNameCommitTransaction
-	TableNameRollbackTransaction
-	TableNamePool
-	TableNamePoolRetry
-	TableNamePoolGet
-	TableNamePoolWait
-	TableNamePoolTake
-	TableNamePoolPut
+	NameDriver  = Name("driver")
+	NameNew     = Name("new")
+	NameBalance = Name("balance")
 )
 
-func defaultName(gaugeType Type) Name {
-	switch gaugeType {
-	case NameError:
-		return "error"
-	case NameUsed:
-		return "used"
-	case NameAttempts:
-		return "attempts"
-	case NameLatency:
-		return "latency_ms"
-	case NameMin:
-		return "min"
-	case NameMax:
-		return "max"
-	case NameTotal:
-		return "total"
-	case NameInProgress:
-		return "in_progress"
-	case NameInFlight:
-		return "in_flight"
-	case NameBalance:
-		return "balance"
-	case NameStatus:
-		return "status"
-	case NameLocal:
-		return "local"
-	case NameSet:
-		return "set"
-	case NameIdempotent:
-		return "idempotent"
-	case NameNonIdempotent:
-		return "non-idempotent"
-	case NameNew:
-		return "new"
-	case NameDelete:
-		return "delete"
-	case NameClose:
-		return "close"
-
-	case DriverName:
-		return "driver"
-	case DriverNameConn:
-		return "conn"
-	case DriverNameConnDial:
-		return "dial"
-	case DriverNameConnInvoke:
-		return "invoke"
-	case DriverNameConnStream:
-		return "stream"
-	case DriverNameConnStreamRecv:
-		return "recv"
-	case DriverNameCluster:
-		return "cluster"
-	case DriverNameInsert:
-		return "insert"
-	case DriverNameUpdate:
-		return "update"
-	case DriverNameRemove:
-		return "remove"
-	case DriverNameGet:
-		return "get"
-	case DriverNamePessimize:
-		return "pessimize"
-	case DriverNameGetCredentials:
-		return "get_credentials"
-	case DriverNameDiscovery:
-		return "discovery"
-	case DriverNameDiscoveryEndpoints:
-		return "endpoints"
-
-	case TableName:
-		return "table"
-	case TableNameSession:
-		return "session"
-	case TableNameKeepAlive:
-		return "keep_alive"
-	case TableNameQuery:
-		return "query"
-	case TableNamePrepareData:
-		return "prepare_data"
-	case TableNameExecuteData:
-		return "execute_data"
-	case TableNameStream:
-		return "stream"
-	case TableNameStreamReadTable:
-		return "read_table"
-	case TableNameStreamExecuteScan:
-		return "execute_scan"
-	case TableNameTransaction:
-		return "transaction"
-	case TableNameBeginTransaction:
-		return "begin"
-	case TableNameCommitTransaction:
-		return "commit"
-	case TableNameRollbackTransaction:
-		return "rollback"
-	case TableNamePool:
-		return "pool"
-	case TableNamePoolRetry:
-		return "retry"
-	case TableNamePoolGet:
-		return "get"
-	case TableNamePoolWait:
-		return "wait"
-	case TableNamePoolTake:
-		return "take"
-	case TableNamePoolPut:
-		return "put"
-	default:
-		return ""
+func err(err error, labels ...Label) []Label {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return append(
+			labels,
+			Label{
+				Tag:   TagError,
+				Value: "context/DeadlineExceeded",
+			},
+			Label{
+				Tag:   TagErrCode,
+				Value: "-1",
+			},
+		)
 	}
+	if errors.Is(err, context.Canceled) {
+		return append(
+			labels,
+			Label{
+				Tag:   TagError,
+				Value: "context/Canceled",
+			},
+			Label{
+				Tag:   TagErrCode,
+				Value: "-1",
+			},
+		)
+	}
+	if ok, code, text := ydb.IsTransportError(err); ok {
+		return append(
+			labels,
+			Label{
+				Tag:   TagError,
+				Value: "transport/" + text,
+			},
+			Label{
+				Tag:   TagErrCode,
+				Value: fmt.Sprintf("%06d", code),
+			},
+		)
+	}
+	if ok, code, text := ydb.IsOperationError(err); ok {
+		return append(
+			labels,
+			Label{
+				Tag:   TagError,
+				Value: "operation/" + text,
+			},
+			Label{
+				Tag:   TagErrCode,
+				Value: fmt.Sprintf("%06d", code),
+			},
+		)
+	}
+	return append(
+		labels,
+		Label{
+			Tag:   TagError,
+			Value: "unknown/" + strings.ReplaceAll(err.Error(), " ", "_"),
+		},
+		Label{
+			Tag:   TagErrCode,
+			Value: "-1",
+		},
+	)
 }
 
-type (
-	nameFunc    func(gaugeType Type) Name
-	errNameFunc func(err error) Name
-	gaugeFunc   func(parts ...Name) Gauge
-)
-
-func parseConfig(c Config, scopes ...Type) (gaugeFunc, nameFunc, errNameFunc) {
-	name := func(gaugeType Type) Name {
-		if n := c.Name(gaugeType); n != nil {
-			return Name(*n)
-		}
-		return defaultName(gaugeType)
-	}
-	prefix := make([]Name, 0, 1+len(scopes))
-	if c.Prefix() != nil {
-		prefix = append(prefix, Name(*(c.Prefix())))
-	}
-	for _, path := range scopes {
-		prefix = append(prefix, name(path))
-	}
-	delimiter := "/"
-	if c.Delimiter() != nil {
-		delimiter = *c.Delimiter()
-	}
-	errName := func(err error) Name {
-		if n := c.ErrName(err); n != nil {
-			return Name(*n)
-		}
-		return Name(defaultErrName(err, delimiter))
-	}
-	gauges := make(map[Name]Gauge)
-	mtx := sync.Mutex{}
-	gauge := func(parts ...Name) Gauge {
-		parts = append(prefix, parts...)
-		n := c.Join(parts...)
-		if n == nil {
-			s := defaultJoin(delimiter, parts...)
-			n = &s
-		}
-		mtx.Lock()
-		defer mtx.Unlock()
-		if gauge, ok := (gauges)[Name(*n)]; ok {
-			return gauge
-		}
-		gauge := c.Gauge(*n)
-		(gauges)[Name(*n)] = gauge
-		return gauge
-	}
-	return gauge, name, errName
-}
-
-func defaultJoin(delimiter string, parts ...Name) string {
-	s := make([]string, 0, len(parts))
-	for _, p := range parts {
-		ss := strings.TrimSpace(string(p))
-		if ss != "" {
-			s = append(s, ss)
-		}
-	}
-	return strings.Join(s, delimiter)
-}
-
-func defaultErrName(err error, delimiter string) string {
-	if ydb.IsTimeoutError(err) {
-		return "timeout"
-	}
-	if ok, _, text := ydb.IsTransportError(err); ok {
-		return strings.Join([]string{"transport", text}, delimiter)
-	}
-	if ok, _, text := ydb.IsOperationError(err); ok {
-		return strings.Join([]string{"operation", text}, delimiter)
-	}
-	return strings.ReplaceAll(err.Error(), " ", "_")
-}
-
+// Gauge tracks single float64 value.
 type Gauge interface {
-	// Inc increments the counter by 1
-	Inc()
-	// Dec decrements the counter by 1
-	Dec()
-	// Set sets the Gauge to an arbitrary value.
+	Add(delta float64)
 	Set(value float64)
-	// Value returns current value
-	Value() float64
+}
+
+// GaugeVec
+type GaugeVec interface {
+	With(labels ...Label) Gauge
 }
 
 type Details int
 
+const (
+	DriverSystemEvents = Details(1 << iota)
+	DriverClusterEvents
+	DriverConnEvents
+	DriverCredentialsEvents
+	DriverDiscoveryEvents
+
+	TableSessionEvents
+	tableSessionQueryEvents
+	tableSessionQueryStreamEvents
+	tableSessionTransactionEvents
+	tablePoolLifeCycleEvents
+	tablePoolRetryEvents
+	tablePoolSessionLifeCycleEvents
+	tablePoolCommonAPIEvents
+	tablePoolNativeAPIEvents
+	tablePoolYdbSqlAPIEvents
+
+	TableQueryEvents       = TableSessionEvents | tableSessionQueryEvents
+	TableStreamEvents      = TableSessionEvents | tableSessionQueryEvents | tableSessionQueryStreamEvents
+	TableTransactionEvents = TableSessionEvents | tableSessionTransactionEvents
+	TablePoolEvents        = tablePoolLifeCycleEvents | tablePoolRetryEvents | tablePoolSessionLifeCycleEvents | tablePoolCommonAPIEvents | tablePoolNativeAPIEvents | tablePoolYdbSqlAPIEvents
+)
+
+var (
+	version = Label{
+		Tag: TagVersion,
+		Value: func() string {
+			_, version := path.Split(ydb.Version)
+			return version
+		}(),
+	}
+)
+
 type Config interface {
+	// Details returns bitmask for customize details of metrics
+	// If zero - use full set of driver metrics
 	Details() Details
-	// Gauge makes Gauge by name
-	Gauge(name string) Gauge
-	// Delimiter returns delimiter
-	Delimiter() *string
-	// Prefix returns prefix for gauge or empty string
-	Prefix() *string
-	// Name returns string name by type
-	Name(Type) *string
-	// Join returns Name after concatenation
-	Join(parts ...Name) *string
-	// ErrName returns Name by error
-	ErrName(err error) *string
+
+	// Gauge returns Gauge by name, subsystem and labels
+	// If gauge by args already created - return gauge from cache
+	// If gauge by args nothing - create and return newest gauge
+	GaugeVec(name string, description string, labelNames ...string) GaugeVec
+
+	// WithSubsystem returns new Config with subsystem scope
+	WithSystem(subsystem string) Config
 }
