@@ -53,15 +53,19 @@ func Table(c Config) trace.Table {
 	}
 	if c.Details()&TableSessionEvents != 0 {
 		c := c.WithSystem("session")
-		balance := c.GaugeVec("balance", "balance counter between created and deleted sessions", TagVersion).With(version)
-		new := c.GaugeVec("new", "create sessions in flight", TagVersion, TagSuccess)
-		delete := c.GaugeVec("delete", "delete sessions in flight", TagVersion, TagSuccess)
-		keepalive := c.GaugeVec("keepalive", "keep-alive sessions in flight", TagVersion, TagSuccess)
-		latency := c.GaugeVec("latency", "latency of call", TagSuccess, TagVersion, TagCall)
+		balance := c.GaugeVec("balance", "balance counter between created and deleted sessions", TagVersion, TagAddress)
+		new := c.GaugeVec("new", "create sessions in flight", TagVersion, TagSuccess, TagAddress)
+		delete := c.GaugeVec("delete", "delete sessions in flight", TagVersion, TagSuccess, TagAddress)
+		keepalive := c.GaugeVec("keepalive", "keep-alive sessions in flight", TagVersion, TagSuccess, TagAddress)
+		latency := c.GaugeVec("latency", "latency of call", TagSuccess, TagVersion, TagCall, TagAddress)
 		errs := c.GaugeVec("errors", "session result errors", TagError, TagErrCode, TagVersion, TagCall)
 		t.OnSessionNew = func(info trace.SessionNewStartInfo) func(trace.SessionNewDoneInfo) {
 			new.With(
 				version,
+				Label{
+					Tag:   TagAddress,
+					Value: "wip",
+				},
 				Label{
 					Tag:   TagSuccess,
 					Value: "wip",
@@ -78,22 +82,37 @@ func Table(c Config) trace.Table {
 						return "false"
 					}(),
 				}
-				latency.With(success, version, Label{Tag: TagCall, Value: "new"}).Set(float64(time.Since(start).Nanoseconds()))
+				address := Label{
+					Tag: TagAddress,
+					Value: func() string {
+						if info.Session != nil {
+							return info.Session.Address()
+						}
+						return ""
+					}(),
+				}
+				latency.With(success, version, address, Label{Tag: TagCall, Value: "new"}).Set(float64(time.Since(start).Nanoseconds()))
 				new.With(
 					version,
 					success,
+					address,
 				).Add(-1)
 				if info.Error != nil {
 					errs.With(err(info.Error, version, Label{Tag: TagCall, Value: "new"})...).Add(1)
 				} else {
-					balance.Add(1)
+					balance.With(version, address).Add(1)
 				}
 			}
 		}
 		t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
-			balance.Add(-1)
+			address := Label{
+				Tag:   TagAddress,
+				Value: info.Session.Address(),
+			}
+			balance.With(version, address).Add(-1)
 			delete.With(
 				version,
+				address,
 				Label{
 					Tag:   TagSuccess,
 					Value: "wip",
@@ -114,6 +133,7 @@ func Table(c Config) trace.Table {
 				delete.With(
 					version,
 					success,
+					address,
 				).Add(-1)
 				if info.Error != nil {
 					errs.With(err(info.Error, version, Label{Tag: TagCall, Value: "delete"})...).Add(1)

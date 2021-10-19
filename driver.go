@@ -37,9 +37,46 @@ func Driver(c Config) trace.Driver {
 		created := c.GaugeVec("created", "balance between created and closed connection wrappers", TagAddress, TagDataCenter, TagVersion)
 		states := c.GaugeVec("states", "states of connection", TagAddress, TagDataCenter, TagState, TagVersion)
 		connected := c.GaugeVec("connected", "actual connections", TagAddress, TagDataCenter, TagCall, TagMethod, TagVersion)
+		inflight := c.GaugeVec("inflight", "connections in flight", TagAddress, TagDataCenter, TagVersion)
 		receives := c.GaugeVec("stream_receives", "number of receives per single stream", TagAddress, TagDataCenter, TagCall, TagMethod, TagSuccess, TagVersion)
+		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
+			address := Label{
+				Tag:   TagAddress,
+				Value: info.Address,
+			}
+			dataCenter := Label{
+				Tag:   TagDataCenter,
+				Value: info.Location.String(),
+			}
+			return func(info trace.ConnTakeDoneInfo) {
+				if info.Error == nil {
+					inflight.With(
+						version,
+						address,
+						dataCenter,
+					).Add(1)
+				}
+			}
+		}
+		t.OnConnRelease = func(info trace.ConnReleaseStartInfo) func(trace.ConnReleaseDoneInfo) {
+			address := Label{
+				Tag:   TagAddress,
+				Value: info.Address,
+			}
+			dataCenter := Label{
+				Tag:   TagDataCenter,
+				Value: info.Location.String(),
+			}
+			return func(info trace.ConnReleaseDoneInfo) {
+				inflight.With(
+					version,
+					address,
+					dataCenter,
+				).Add(-1)
+			}
+		}
 		t.OnConnNew = func(info trace.ConnNewStartInfo) func(trace.ConnNewDoneInfo) {
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -48,15 +85,15 @@ func Driver(c Config) trace.Driver {
 				Value: info.Location.String(),
 			}
 			return func(info trace.ConnNewDoneInfo) {
-				created.With(version, addressLabel, dataCenter).Add(1)
-				states.With(version, addressLabel, dataCenter, Label{
+				created.With(version, address, dataCenter).Add(1)
+				states.With(version, address, dataCenter, Label{
 					Tag:   TagState,
 					Value: info.State.String(),
 				}).Add(1)
 			}
 		}
 		t.OnConnClose = func(info trace.ConnCloseStartInfo) func(trace.ConnCloseDoneInfo) {
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -64,16 +101,16 @@ func Driver(c Config) trace.Driver {
 				Tag:   TagDataCenter,
 				Value: info.Location.String(),
 			}
-			states.With(version, addressLabel, dataCenter, Label{
+			states.With(version, address, dataCenter, Label{
 				Tag:   TagState,
 				Value: info.State.String(),
 			}).Add(-1)
 			return func(info trace.ConnCloseDoneInfo) {
-				created.With(version, addressLabel, dataCenter).Add(-1)
+				created.With(version, address, dataCenter).Add(-1)
 			}
 		}
 		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -81,12 +118,12 @@ func Driver(c Config) trace.Driver {
 				Tag:   TagDataCenter,
 				Value: info.Location.String(),
 			}
-			states.With(version, addressLabel, dataCenter, Label{
+			states.With(version, address, dataCenter, Label{
 				Tag:   TagState,
 				Value: info.State.String(),
 			}).Add(-1)
 			return func(info trace.ConnStateChangeDoneInfo) {
-				states.With(version, addressLabel, dataCenter, Label{
+				states.With(version, address, dataCenter, Label{
 					Tag:   TagState,
 					Value: info.State.String(),
 				}).Add(1)
@@ -100,7 +137,7 @@ func Driver(c Config) trace.Driver {
 			methodLabel := Label{
 				Tag: TagMethod,
 			}
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -112,7 +149,7 @@ func Driver(c Config) trace.Driver {
 			return func(info trace.ConnDialDoneInfo) {
 				latency.With(
 					version,
-					addressLabel,
+					address,
 					dataCenter,
 					callLabel,
 					methodLabel,
@@ -131,18 +168,17 @@ func Driver(c Config) trace.Driver {
 						err(
 							info.Error,
 							version,
-							addressLabel,
+							address,
 							dataCenter,
 							callLabel,
 							methodLabel,
 							Label{
-								Tag:   TagState,
-								Value: info.State.String(),
+								Tag: TagState,
 							},
 						)...,
 					).Add(1)
 				} else {
-					connected.With(version, addressLabel, dataCenter, callLabel, methodLabel).Add(1)
+					connected.With(version, address, dataCenter, callLabel, methodLabel).Add(1)
 				}
 			}
 		}
@@ -154,7 +190,7 @@ func Driver(c Config) trace.Driver {
 			methodLabel := Label{
 				Tag: TagMethod,
 			}
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -166,7 +202,7 @@ func Driver(c Config) trace.Driver {
 			return func(info trace.ConnDisconnectDoneInfo) {
 				latency.With(
 					version,
-					addressLabel,
+					address,
 					dataCenter,
 					callLabel,
 					methodLabel,
@@ -185,7 +221,7 @@ func Driver(c Config) trace.Driver {
 						err(
 							info.Error,
 							version,
-							addressLabel,
+							address,
 							dataCenter,
 							callLabel,
 							methodLabel,
@@ -196,7 +232,7 @@ func Driver(c Config) trace.Driver {
 						)...,
 					).Add(1)
 				} else {
-					connected.With(version, addressLabel, dataCenter, callLabel, methodLabel).Add(-1)
+					connected.With(version, address, dataCenter, callLabel, methodLabel).Add(-1)
 				}
 			}
 		}
@@ -209,7 +245,7 @@ func Driver(c Config) trace.Driver {
 				Tag:   TagMethod,
 				Value: string(info.Method),
 			}
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -232,7 +268,7 @@ func Driver(c Config) trace.Driver {
 				invoke.With(version, success, methodLabel).Add(-1)
 				latency.With(
 					version,
-					addressLabel,
+					address,
 					dataCenter,
 					callLabel,
 					methodLabel,
@@ -243,7 +279,7 @@ func Driver(c Config) trace.Driver {
 						err(
 							info.Error,
 							version,
-							addressLabel,
+							address,
 							dataCenter,
 							callLabel,
 							methodLabel,
@@ -265,7 +301,7 @@ func Driver(c Config) trace.Driver {
 				Tag:   TagMethod,
 				Value: string(info.Method),
 			}
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -291,7 +327,7 @@ func Driver(c Config) trace.Driver {
 					newStream.With(version, success, methodLabel).Add(-1)
 					receives.With(
 						version,
-						addressLabel,
+						address,
 						dataCenter,
 						callLabel,
 						methodLabel,
@@ -299,7 +335,7 @@ func Driver(c Config) trace.Driver {
 					).Set(received)
 					latency.With(
 						version,
-						addressLabel,
+						address,
 						dataCenter, callLabel,
 						methodLabel,
 						success,
@@ -309,7 +345,7 @@ func Driver(c Config) trace.Driver {
 							err(
 								info.Error,
 								version,
-								addressLabel,
+								address,
 								dataCenter,
 								callLabel,
 								methodLabel,
@@ -375,7 +411,7 @@ func Driver(c Config) trace.Driver {
 				},
 			).Add(1)
 			return func(info trace.ClusterGetDoneInfo) {
-				addressLabel := Label{
+				address := Label{
 					Tag:   TagAddress,
 					Value: info.Address,
 				}
@@ -385,7 +421,7 @@ func Driver(c Config) trace.Driver {
 				}
 				latency.With(
 					version,
-					addressLabel,
+					address,
 					dataCenter,
 					Label{
 						Tag:   TagCall,
@@ -406,7 +442,7 @@ func Driver(c Config) trace.Driver {
 				).Set(float64(time.Since(start).Nanoseconds()))
 				get.With(
 					version,
-					addressLabel,
+					address,
 					dataCenter,
 					Label{
 						Tag: TagSuccess,
@@ -423,7 +459,7 @@ func Driver(c Config) trace.Driver {
 						err(
 							info.Error,
 							version,
-							addressLabel,
+							address,
 							dataCenter,
 							Label{
 								Tag:   TagCall,
@@ -441,7 +477,7 @@ func Driver(c Config) trace.Driver {
 			}
 		}
 		t.OnClusterInsert = func(info trace.ClusterInsertStartInfo) func(trace.ClusterInsertDoneInfo) {
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -450,11 +486,11 @@ func Driver(c Config) trace.Driver {
 				Value: info.Location.String(),
 			}
 			return func(info trace.ClusterInsertDoneInfo) {
-				endpoints.With(version, addressLabel, dataCenter).Add(1)
+				endpoints.With(version, address, dataCenter).Add(1)
 			}
 		}
 		t.OnClusterRemove = func(info trace.ClusterRemoveStartInfo) func(trace.ClusterRemoveDoneInfo) {
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -463,7 +499,7 @@ func Driver(c Config) trace.Driver {
 				Value: info.Location.String(),
 			}
 			return func(info trace.ClusterRemoveDoneInfo) {
-				endpoints.With(version, addressLabel, dataCenter).Add(-1)
+				endpoints.With(version, address, dataCenter).Add(-1)
 			}
 		}
 		t.OnClusterUpdate = func(info trace.ClusterUpdateStartInfo) func(trace.ClusterUpdateDoneInfo) {
@@ -471,7 +507,7 @@ func Driver(c Config) trace.Driver {
 			}
 		}
 		t.OnPessimizeNode = func(info trace.PessimizeNodeStartInfo) func(trace.PessimizeNodeDoneInfo) {
-			addressLabel := Label{
+			address := Label{
 				Tag:   TagAddress,
 				Value: info.Address,
 			}
@@ -485,7 +521,7 @@ func Driver(c Config) trace.Driver {
 					err(
 						cause,
 						version,
-						addressLabel,
+						address,
 						dataCenter,
 						Label{
 							Tag: TagSuccess,
@@ -503,7 +539,7 @@ func Driver(c Config) trace.Driver {
 						err(
 							info.Error,
 							version,
-							addressLabel,
+							address,
 							dataCenter,
 							Label{
 								Tag:   TagCall,
