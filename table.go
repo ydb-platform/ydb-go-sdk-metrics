@@ -1,7 +1,7 @@
-package sensors
+package metrics
 
 import (
-	"time"
+	"strconv"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
@@ -10,162 +10,129 @@ func Table(c Config) trace.Table {
 	c = c.WithSystem("table")
 	t := trace.Table{}
 	if c.Details()&tablePoolRetryEvents != 0 {
-		c := c.WithSystem("retry")
-		latency := c.GaugeVec("latency", "latency of retry call", TagIdempotent, TagSuccess, TagVersion)
-		attempts := c.GaugeVec("attempts", "attempts per retry call", TagIdempotent, TagSuccess, TagVersion)
-		errs := c.GaugeVec("errors", "retry result errors", TagIdempotent, TagInternal, TagError, TagErrCode, TagVersion)
-		calls := c.GaugeVec("calls", "retry calls in flight", TagIdempotent, TagVersion)
+		retry := callGauges(c, "retry", TagIdempotent, TagStage)
 		t.OnPoolRetry = func(info trace.PoolRetryStartInfo) func(info trace.PoolRetryInternalInfo) func(trace.PoolRetryDoneInfo) {
 			idempotent := Label{
 				Tag: TagIdempotent,
 				Value: func() string {
 					if info.Idempotent {
-						return "on"
+						return "true"
 					}
-					return "off"
+					return "false"
 				}(),
 			}
-			calls.With(idempotent, version).Add(1)
-			start := time.Now()
+			start := retry.start(idempotent, Label{
+				Tag:   TagStage,
+				Value: "init",
+			})
 			return func(info trace.PoolRetryInternalInfo) func(trace.PoolRetryDoneInfo) {
-				if info.Error != nil {
-					errs.With(err(info.Error, idempotent, version, Label{Tag: TagInternal, Value: "true"})...).Add(1)
-				}
+				start.sync(info.Error, idempotent, Label{
+					Tag:   TagStage,
+					Value: "intermediate",
+				})
 				return func(info trace.PoolRetryDoneInfo) {
-					calls.With(idempotent, version).Add(-1)
-					success := Label{
-						Tag: TagSuccess,
-						Value: func() string {
-							if info.Error == nil {
-								return "true"
-							}
-							return "false"
-						}(),
-					}
-					attempts.With(idempotent, success, version).Set(float64(info.Attempts))
-					latency.With(idempotent, success, version).Set(float64(time.Since(start).Nanoseconds()))
-					if info.Error != nil {
-						errs.With(err(info.Error, idempotent, version, Label{Tag: TagInternal, Value: "false"})...).Add(1)
-					}
+					start.syncWithValue(info.Error, float64(info.Attempts), idempotent, Label{
+						Tag:   TagStage,
+						Value: "finish",
+					})
 				}
 			}
 		}
 	}
 	if c.Details()&TableSessionEvents != 0 {
 		c := c.WithSystem("session")
-		balance := c.GaugeVec("balance", "balance counter between created and deleted sessions", TagVersion, TagAddress)
-		new := c.GaugeVec("new", "create sessions in flight", TagVersion, TagSuccess, TagAddress)
-		delete := c.GaugeVec("delete", "delete sessions in flight", TagVersion, TagSuccess, TagAddress)
-		keepalive := c.GaugeVec("keepalive", "keep-alive sessions in flight", TagVersion, TagSuccess, TagAddress)
-		latency := c.GaugeVec("latency", "latency of call", TagSuccess, TagVersion, TagCall, TagAddress)
-		errs := c.GaugeVec("errors", "session result errors", TagError, TagErrCode, TagVersion, TagCall)
-		t.OnSessionNew = func(info trace.SessionNewStartInfo) func(trace.SessionNewDoneInfo) {
-			new.With(
-				version,
-				Label{
-					Tag:   TagAddress,
+		if c.Details()&tableSessionEvents != 0 {
+			new := callGauges(c, "new", TagNodeID)
+			delete := callGauges(c, "delete", TagNodeID)
+			keepAlive := callGauges(c, "keep_alive", TagNodeID)
+			t.OnSessionNew = func(info trace.SessionNewStartInfo) func(trace.SessionNewDoneInfo) {
+				start := new.start(Label{
+					Tag:   TagNodeID,
 					Value: "wip",
-				},
-				Label{
-					Tag:   TagSuccess,
-					Value: "wip",
-				},
-			).Add(1)
-			start := time.Now()
-			return func(info trace.SessionNewDoneInfo) {
-				success := Label{
-					Tag: TagSuccess,
-					Value: func() string {
-						if info.Error == nil {
-							return "true"
-						}
-						return "false"
-					}(),
+				})
+				return func(info trace.SessionNewDoneInfo) {
+					start.sync(info.Error, Label{
+						Tag:   TagNodeID,
+						Value: func() string {
+							if info.Session != nil {
+								return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+							}
+							return ""
+						}(),
+					})
 				}
-				address := Label{
-					Tag: TagAddress,
-					Value: func() string {
-						if info.Session != nil {
-							return info.Session.Address()
-						}
-						return ""
-					}(),
+			}
+			t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
 				}
-				latency.With(success, version, address, Label{Tag: TagCall, Value: "new"}).Set(float64(time.Since(start).Nanoseconds()))
-				new.With(
-					version,
-					success,
-					address,
-				).Add(-1)
-				if info.Error != nil {
-					errs.With(err(info.Error, version, Label{Tag: TagCall, Value: "new"})...).Add(1)
-				} else {
-					balance.With(version, address).Add(1)
+				start := delete.start(nodeID)
+				return func(info trace.SessionDeleteDoneInfo) {
+					start.sync(info.Error, nodeID)
+				}
+			}
+			t.OnSessionKeepAlive = func(info trace.KeepAliveStartInfo) func(trace.KeepAliveDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+				}
+				start := keepAlive.start(nodeID)
+				return func(info trace.KeepAliveDoneInfo) {
+					start.sync(info.Error, nodeID)
 				}
 			}
 		}
-		t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
-				Value: info.Session.Address(),
-			}
-			balance.With(version, address).Add(-1)
-			delete.With(
-				version,
-				address,
-				Label{
-					Tag:   TagSuccess,
-					Value: "wip",
-				},
-			).Add(1)
-			start := time.Now()
-			return func(info trace.SessionDeleteDoneInfo) {
-				success := Label{
-					Tag: TagSuccess,
-					Value: func() string {
-						if info.Error == nil {
-							return "true"
-						}
-						return "false"
-					}(),
+		if c.Details()&tableSessionQueryEvents != 0 {
+			c := c.WithSystem("query")
+			if c.Details()&tableSessionQueryInvokeEvents != 0 {
+				c := c.WithSystem("invoke")
+				prepare := callGauges(c, "prepare", TagNodeID)
+				execute := callGauges(c, "execute", TagNodeID)
+				t.OnSessionQueryPrepare = func(info trace.SessionQueryPrepareStartInfo) func(trace.PrepareDataQueryDoneInfo) {
+					nodeID := Label{
+						Tag:   TagNodeID,
+						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					}
+					start := prepare.start(nodeID)
+					return func(info trace.PrepareDataQueryDoneInfo) {
+						start.sync(info.Error, nodeID)
+					}
 				}
-				latency.With(success, version, Label{Tag: TagCall, Value: "delete"}).Set(float64(time.Since(start).Nanoseconds()))
-				delete.With(
-					version,
-					success,
-					address,
-				).Add(-1)
-				if info.Error != nil {
-					errs.With(err(info.Error, version, Label{Tag: TagCall, Value: "delete"})...).Add(1)
+				t.OnSessionQueryExecute = func(info trace.ExecuteDataQueryStartInfo) func(trace.SessionQueryPrepareDoneInfo) {
+					nodeID := Label{
+						Tag:   TagNodeID,
+						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					}
+					start := execute.start(nodeID)
+					return func(info trace.SessionQueryPrepareDoneInfo) {
+						start.sync(info.Error, nodeID)
+					}
 				}
 			}
-		}
-		t.OnSessionKeepAlive = func(info trace.KeepAliveStartInfo) func(trace.KeepAliveDoneInfo) {
-			keepalive.With(
-				version,
-				Label{
-					Tag:   TagSuccess,
-					Value: "wip",
-				},
-			).Add(1)
-			start := time.Now()
-			return func(info trace.KeepAliveDoneInfo) {
-				success := Label{
-					Tag: TagSuccess,
-					Value: func() string {
-						if info.Error == nil {
-							return "true"
-						}
-						return "false"
-					}(),
+			if c.Details()&tableSessionQueryStreamEvents != 0 {
+				c := c.WithSystem("stream")
+				read := callGauges(c, "read", TagNodeID)
+				execute := callGauges(c, "execute", TagNodeID)
+				t.OnSessionQueryStreamExecute = func(info trace.SessionQueryStreamExecuteStartInfo) func(trace.SessionQueryStreamExecuteDoneInfo) {
+					nodeID := Label{
+						Tag:   TagNodeID,
+						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					}
+					start := execute.start(nodeID)
+					return func(info trace.SessionQueryStreamExecuteDoneInfo) {
+						start.sync(info.Error, nodeID)
+					}
 				}
-				latency.With(success, version, Label{Tag: TagCall, Value: "keep-alive"}).Set(float64(time.Since(start).Nanoseconds()))
-				keepalive.With(
-					version,
-					success,
-				).Add(-1)
-				if info.Error != nil {
-					errs.With(err(info.Error, version, Label{Tag: TagCall, Value: "keep-alive"})...).Add(1)
+				t.OnSessionQueryStreamRead = func(info trace.SessionQueryStreamReadStartInfo) func(trace.SessionQueryStreamReadDoneInfo) {
+					nodeID := Label{
+						Tag:   TagNodeID,
+						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					}
+					start := read.start(nodeID)
+					return func(info trace.SessionQueryStreamReadDoneInfo) {
+						start.sync(info.Error, nodeID)
+					}
 				}
 			}
 		}
@@ -173,107 +140,6 @@ func Table(c Config) trace.Table {
 	return t
 }
 
-// Table makes trace.ClientTrace with metrics publishing
-//func Table(c Config) trace.Table {
-//	t := trace.Table{}
-//	if c.Details()&tableSessionQueryEvents != 0 {
-//		t.OnSessionQueryPrepare = func(info trace.SessionQueryPrepareStartInfo) func(trace.PrepareDataQueryDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.PrepareDataQueryDoneInfo) {
-//				timer(
-//					name(TableNameQuery),
-//					name(TableNameData),
-//					name(TableNameDataPrepare),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameQuery),
-//					name(TableNameData),
-//					name(TableNameDataPrepare),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameQuery),
-//						name(TableNameData),
-//						name(TableNameDataPrepare),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//		t.OnSessionQueryExecute = func(info trace.ExecuteDataQueryStartInfo) func(trace.SessionQueryPrepareDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.SessionQueryPrepareDoneInfo) {
-//				timer(
-//					name(TableNameQuery),
-//					name(TableNameData),
-//					name(TableNameDataExecute),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameQuery),
-//					name(TableNameData),
-//					name(TableNameDataExecute),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameQuery),
-//						name(TableNameData),
-//						name(TableNameDataExecute),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//	}
-//	if c.Details()&tableSessionQueryStreamEvents != 0 {
-//		t.OnSessionQueryStreamExecute = func(info trace.SessionQueryStreamExecuteStartInfo) func(trace.SessionQueryStreamExecuteDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.SessionQueryStreamExecuteDoneInfo) {
-//				timer(
-//					name(TableNameStream),
-//					name(TableNameStreamExecuteScan),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameStream),
-//					name(TableNameStreamExecuteScan),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameStream),
-//						name(TableNameStreamExecuteScan),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//		t.OnSessionQueryStreamRead = func(info trace.SessionQueryStreamReadStartInfo) func(trace.SessionQueryStreamReadDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.SessionQueryStreamReadDoneInfo) {
-//				timer(
-//					name(TableNameStream),
-//					name(TableNameStreamReadTable),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameStream),
-//					name(TableNameStreamReadTable),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameStream),
-//						name(TableNameStreamReadTable),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//	}
 //	if c.Details()&tableSessionTransactionEvents != 0 {
 //		t.OnSessionTransactionBegin = func(info trace.SessionTransactionBeginStartInfo) func(trace.SessionTransactionBeginDoneInfo) {
 //			start := time.Now()
@@ -372,21 +238,21 @@ func Table(c Config) trace.Table {
 //		t.OnPoolSessionNew = func(info trace.PoolSessionNewStartInfo) func(trace.PoolSessionNewDoneInfo) {
 //			c.Gauge(
 //				name(TableNamePool),
-//				name(TableNameSession),
+//				name(Tablecallsession),
 //				name(NameNew),
 //				name(NameInProgress),
 //			).Add(1)
 //			return func(info trace.PoolSessionNewDoneInfo) {
 //				c.Gauge(
 //					name(TableNamePool),
-//					name(TableNameSession),
+//					name(Tablecallsession),
 //					name(NameNew),
 //					name(NameInProgress),
 //				).Add(-1)
 //				if info.Error != nil {
 //					c.Gauge(
 //						name(TableNamePool),
-//						name(TableNameSession),
+//						name(Tablecallsession),
 //						name(NameNew),
 //						name(NameError),
 //						errName(info.Error),
@@ -394,7 +260,7 @@ func Table(c Config) trace.Table {
 //				} else {
 //					c.Gauge(
 //						name(TableNamePool),
-//						name(TableNameSession),
+//						name(Tablecallsession),
 //						name(NameNew),
 //					).Add(1)
 //					c.Gauge(
@@ -408,47 +274,13 @@ func Table(c Config) trace.Table {
 //			return func(info trace.PoolSessionCloseDoneInfo) {
 //				c.Gauge(
 //					name(TableNamePool),
-//					name(TableNameSession),
+//					name(Tablecallsession),
 //					name(NameClose),
 //				).Add(1)
 //				c.Gauge(
 //					name(TableNamePool),
 //					name(NameBalance),
 //				).Add(-1)
-//			}
-//		}
-//	}
-//	if c.Details()&tablePoolRetryEvents != 0 {
-//		t.OnPoolRetry = func(info trace.PoolRetryStartInfo) func(trace.PoolRetryDoneInfo) {
-//			start := time.Now()
-//			idempotent := func() Name {
-//				if info.Idempotent {
-//					return name(NameIdempotent)
-//				}
-//				return name(NameNonIdempotent)
-//			}()
-//			return func(info trace.PoolRetryDoneInfo) {
-//				timer(
-//					name(TableNamePool),
-//					name(TableNamePoolRetry),
-//					idempotent,
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				gauge(
-//					name(TableNamePool),
-//					name(TableNamePoolRetry),
-//					idempotent,
-//					name(NameAttempts),
-//				).Set(float64(info.Attempts))
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(TableNamePoolRetry),
-//						idempotent,
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
 //			}
 //		}
 //	}
