@@ -157,14 +157,12 @@ const (
 	tablePoolLifeCycleEvents
 	tablePoolRetryEvents
 	tablePoolSessionLifeCycleEvents
-	tablePoolCommonAPIEvents
-	tablePoolNativeAPIEvents
-	tablePoolYdbSqlAPIEvents
+	tablePoolAPIEvents
 
 	DriverConnEvents        = driverNetEvents | DriverCoreEvents
 	tableSessionQueryEvents = tableSessionQueryInvokeEvents | tableSessionQueryStreamEvents
 	TableSessionEvents      = tableSessionEvents | tableSessionQueryEvents | tableSessionTransactionEvents
-	TablePoolEvents         = tablePoolLifeCycleEvents | tablePoolRetryEvents | tablePoolSessionLifeCycleEvents | tablePoolCommonAPIEvents | tablePoolNativeAPIEvents | tablePoolYdbSqlAPIEvents
+	TablePoolEvents         = tablePoolLifeCycleEvents | tablePoolRetryEvents | tablePoolSessionLifeCycleEvents | tablePoolAPIEvents
 )
 
 var (
@@ -208,11 +206,10 @@ type callScope struct {
 
 func (s callScope) start(labels ...Label) *callTrace {
 	s.calls.With(
-		version,
-		Label{
+		append([]Label{version, Label{
 			Tag:   TagSuccess,
 			Value: "wip",
-		},
+		}}, labels...)...,
 	).Add(1)
 	return &callTrace{
 		start: time.Now(),
@@ -239,16 +236,19 @@ func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) {
 	t.scope.latency.With(append([]Label{version, success}, labels...)...).Set(float64(time.Since(t.start).Nanoseconds()))
 }
 
-func (t *callTrace) sync(error error, labels ...Label) {
+func (t *callTrace) sync(e error, labels ...Label) (callLables []Label, errLabels []Label) {
 	success := Label{
 		Tag:   TagSuccess,
-		Value: ifStr(err == nil, "true", "false"),
+		Value: ifStr(e == nil, "true", "false"),
 	}
-	t.scope.calls.With(append([]Label{version, success}, labels...)...).Add(1)
-	t.scope.latency.With(append([]Label{version, success}, labels...)...).Set(float64(time.Since(t.start).Nanoseconds()))
-	if err != nil {
-		t.scope.errs.With(err(error, append([]Label{version, success}, labels...)...)...).Add(1)
+	callLables = append([]Label{version, success}, labels...)
+	t.scope.calls.With(callLables...).Add(1)
+	t.scope.latency.With(callLables...).Set(float64(time.Since(t.start).Nanoseconds()))
+	if e != nil {
+		errLabels = err(e, append([]Label{version}, labels...)...)
+		t.scope.errs.With(errLabels...).Add(1)
 	}
+	return
 }
 
 func callGauges(c Config, scope string, tags ...string) (s *callScope) {

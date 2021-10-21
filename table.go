@@ -1,9 +1,8 @@
 package metrics
 
 import (
-	"strconv"
-
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
+	"strconv"
 )
 
 func Table(c Config) trace.Table {
@@ -51,15 +50,18 @@ func Table(c Config) trace.Table {
 					Value: "wip",
 				})
 				return func(info trace.SessionNewDoneInfo) {
-					start.sync(info.Error, Label{
-						Tag:   TagNodeID,
+					nodeID := Label{
+						Tag: TagNodeID,
 						Value: func() string {
 							if info.Session != nil {
 								return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
 							}
 							return ""
 						}(),
-					})
+					}
+					lables, _ := start.sync(info.Error, nodeID)
+					// publish empty delete call metric for register metrics on metrics storage
+					delete.calls.With(lables...).Add(0)
 				}
 			}
 			t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
@@ -136,237 +138,160 @@ func Table(c Config) trace.Table {
 				}
 			}
 		}
+		if c.Details()&tableSessionTransactionEvents != 0 {
+			c := c.WithSystem("transaction")
+			begin := callGauges(c, "begin", TagNodeID)
+			commit := callGauges(c, "commit", TagNodeID)
+			rollback := callGauges(c, "rollback", TagNodeID)
+			t.OnSessionTransactionBegin = func(info trace.SessionTransactionBeginStartInfo) func(trace.SessionTransactionBeginDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+				}
+				start := begin.start(nodeID)
+				return func(info trace.SessionTransactionBeginDoneInfo) {
+					start.sync(info.Error, nodeID)
+				}
+			}
+			t.OnSessionTransactionCommit = func(info trace.SessionTransactionCommitStartInfo) func(trace.SessionTransactionCommitDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+				}
+				start := commit.start(nodeID)
+				return func(info trace.SessionTransactionCommitDoneInfo) {
+					start.sync(info.Error, nodeID)
+				}
+			}
+			t.OnSessionTransactionRollback = func(info trace.SessionTransactionRollbackStartInfo) func(trace.SessionTransactionRollbackDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+				}
+				start := rollback.start(nodeID)
+				return func(info trace.SessionTransactionRollbackDoneInfo) {
+					start.sync(info.Error, nodeID)
+				}
+			}
+		}
+	}
+	if c.Details()&TablePoolEvents != 0 {
+		c := c.WithSystem("pool")
+		if c.Details()&tablePoolLifeCycleEvents != 0 {
+			min := callGauges(c, "min")
+			max := callGauges(c, "max")
+			t.OnPoolInit = func(info trace.PoolInitStartInfo) func(trace.PoolInitDoneInfo) {
+				startMin := min.start()
+				startMax := max.start()
+				return func(info trace.PoolInitDoneInfo) {
+					startMin.syncWithValue(nil, float64(info.KeepAliveMinSize))
+					startMax.syncWithValue(nil, float64(info.Limit))
+				}
+			}
+			t.OnPoolClose = func(info trace.PoolCloseStartInfo) func(trace.PoolCloseDoneInfo) {
+				startMin := min.start()
+				startMax := max.start()
+				return func(info trace.PoolCloseDoneInfo) {
+					startMin.syncWithValue(info.Error, 0)
+					startMax.syncWithValue(info.Error, 0)
+				}
+			}
+		}
+		if c.Details()&tablePoolSessionLifeCycleEvents != 0 {
+			c := c.WithSystem("session")
+			new := callGauges(c, "new")
+			close := callGauges(c, "close")
+			t.OnPoolSessionNew = func(info trace.PoolSessionNewStartInfo) func(trace.PoolSessionNewDoneInfo) {
+				start := new.start()
+				return func(info trace.PoolSessionNewDoneInfo) {
+					start.sync(info.Error)
+				}
+			}
+			t.OnPoolSessionClose = func(info trace.PoolSessionCloseStartInfo) func(trace.PoolSessionCloseDoneInfo) {
+				start := close.start()
+				return func(info trace.PoolSessionCloseDoneInfo) {
+					start.sync(nil)
+				}
+			}
+		}
+		if c.Details()&tablePoolAPIEvents != 0 {
+			c := c.WithSystem("api")
+			put := callGauges(c, "put", TagNodeID)
+			get := callGauges(c, "get", TagNodeID)
+			wait := callGauges(c, "wait", TagNodeID)
+			take := callGauges(c, "take", TagNodeID, TagStage)
+			t.OnPoolPut = func(info trace.PoolPutStartInfo) func(trace.PoolPutDoneInfo) {
+				nodeID := Label{
+					Tag: TagNodeID,
+					Value: func() string {
+						if info.Session != nil {
+							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+						}
+						return ""
+					}(),
+				}
+				start := put.start(nodeID)
+				return func(info trace.PoolPutDoneInfo) {
+					start.sync(info.Error, nodeID)
+				}
+			}
+			t.OnPoolGet = func(info trace.PoolGetStartInfo) func(trace.PoolGetDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: "wip",
+				}
+				start := get.start(nodeID)
+				return func(info trace.PoolGetDoneInfo) {
+					nodeID.Value = func() string {
+						if info.Session != nil {
+							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+						}
+						return ""
+					}()
+					start.sync(info.Error, nodeID)
+				}
+			}
+			t.OnPoolWait = func(info trace.PoolWaitStartInfo) func(trace.PoolWaitDoneInfo) {
+				nodeID := Label{
+					Tag:   TagNodeID,
+					Value: "wip",
+				}
+				start := wait.start(nodeID)
+				return func(info trace.PoolWaitDoneInfo) {
+					nodeID.Value = func() string {
+						if info.Session != nil {
+							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+						}
+						return ""
+					}()
+					start.sync(info.Error, nodeID)
+				}
+			}
+			t.OnPoolTake = func(info trace.PoolTakeStartInfo) func(doneInfo trace.PoolTakeWaitInfo) func(doneInfo trace.PoolTakeDoneInfo) {
+				nodeID := Label{
+					Tag: TagNodeID,
+					Value: func() string {
+						if info.Session != nil {
+							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+						}
+						return ""
+					}(),
+				}
+				stage := Label{
+					Tag:   TagStage,
+					Value: "init",
+				}
+				start := take.start(nodeID)
+				return func(info trace.PoolTakeWaitInfo) func(info trace.PoolTakeDoneInfo) {
+					stage.Value = "intermediate"
+					start.sync(nil, nodeID, stage)
+					return func(info trace.PoolTakeDoneInfo) {
+						stage.Value = "finish"
+						start.sync(info.Error, nodeID, stage)
+					}
+				}
+			}
+		}
 	}
 	return t
 }
-
-//	if c.Details()&tableSessionTransactionEvents != 0 {
-//		t.OnSessionTransactionBegin = func(info trace.SessionTransactionBeginStartInfo) func(trace.SessionTransactionBeginDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.SessionTransactionBeginDoneInfo) {
-//				timer(
-//					name(TableNameTransaction),
-//					name(TableNameTransactionBegin),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameTransaction),
-//					name(TableNameTransactionBegin),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameTransaction),
-//						name(TableNameTransactionBegin),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//		t.OnSessionTransactionCommit = func(info trace.SessionTransactionCommitStartInfo) func(trace.SessionTransactionCommitDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.SessionTransactionCommitDoneInfo) {
-//				timer(
-//					name(TableNameTransaction),
-//					name(TableNameTransactionCommit),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameTransaction),
-//					name(TableNameTransactionCommit),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameTransaction),
-//						name(TableNameTransactionCommit),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//		t.OnSessionTransactionRollback = func(info trace.SessionTransactionRollbackStartInfo) func(trace.SessionTransactionRollbackDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.SessionTransactionRollbackDoneInfo) {
-//				timer(
-//					name(TableNameTransaction),
-//					name(TableNameTransactionRollback),
-//					name(NameLatency),
-//				).RecordDuration(time.Since(start))
-//				c.Gauge(
-//					name(TableNameTransaction),
-//					name(TableNameTransactionRollback),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNameTransaction),
-//						name(TableNameTransactionRollback),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//	}
-//	if c.Details()&tablePoolLifeCycleEvents != 0 {
-//		t.OnPoolInit = func(info trace.PoolInitStartInfo) func(trace.PoolInitDoneInfo) {
-//			return func(info trace.PoolInitDoneInfo) {
-//				gauge(
-//					name(TableNamePool),
-//					name(NameMax),
-//				).Set(float64(info.Limit))
-//				gauge(
-//					name(TableNamePool),
-//					name(NameMin),
-//				).Set(float64(info.KeepAliveMinSize))
-//			}
-//		}
-//		t.OnPoolClose = func(info trace.PoolCloseStartInfo) func(trace.PoolCloseDoneInfo) {
-//			return func(info trace.PoolCloseDoneInfo) {
-//				gauge(
-//					name(TableNamePool),
-//					name(NameMax),
-//				).Set(0)
-//				gauge(
-//					name(TableNamePool),
-//					name(NameMin),
-//				).Set(0)
-//			}
-//		}
-//	}
-//	if c.Details()&tablePoolSessionLifeCycleEvents != 0 {
-//		t.OnPoolSessionNew = func(info trace.PoolSessionNewStartInfo) func(trace.PoolSessionNewDoneInfo) {
-//			c.Gauge(
-//				name(TableNamePool),
-//				name(Tablecallsession),
-//				name(NameNew),
-//				name(NameInProgress),
-//			).Add(1)
-//			return func(info trace.PoolSessionNewDoneInfo) {
-//				c.Gauge(
-//					name(TableNamePool),
-//					name(Tablecallsession),
-//					name(NameNew),
-//					name(NameInProgress),
-//				).Add(-1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(Tablecallsession),
-//						name(NameNew),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				} else {
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(Tablecallsession),
-//						name(NameNew),
-//					).Add(1)
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(NameBalance),
-//					).Add(1)
-//				}
-//			}
-//		}
-//		t.OnPoolSessionClose = func(info trace.PoolSessionCloseStartInfo) func(trace.PoolSessionCloseDoneInfo) {
-//			return func(info trace.PoolSessionCloseDoneInfo) {
-//				c.Gauge(
-//					name(TableNamePool),
-//					name(Tablecallsession),
-//					name(NameClose),
-//				).Add(1)
-//				c.Gauge(
-//					name(TableNamePool),
-//					name(NameBalance),
-//				).Add(-1)
-//			}
-//		}
-//	}
-//	if c.Details()&tablePoolCommonAPIEvents != 0 {
-//		t.OnPoolPut = func(info trace.PoolPutStartInfo) func(trace.PoolPutDoneInfo) {
-//			return func(info trace.PoolPutDoneInfo) {
-//				c.Gauge(
-//					name(TableNamePool),
-//					name(TableNamePoolPut),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(TableNamePoolPut),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//	}
-//	if c.Details()&tablePoolNativeAPIEvents != 0 {
-//		t.OnPoolGet = func(info trace.PoolGetStartInfo) func(trace.PoolGetDoneInfo) {
-//			return func(info trace.PoolGetDoneInfo) {
-//				c.Gauge(
-//					name(TableNamePool),
-//					name(TableNamePoolGet),
-//				).Add(1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(TableNamePoolGet),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//		t.OnPoolWait = func(info trace.PoolWaitStartInfo) func(trace.PoolWaitDoneInfo) {
-//			c.Gauge(
-//				name(TableNamePool),
-//				name(TableNamePoolWait),
-//				name(NameBalance),
-//			).Add(1)
-//			return func(info trace.PoolWaitDoneInfo) {
-//				c.Gauge(
-//					name(TableNamePool),
-//					name(TableNamePoolWait),
-//					name(NameBalance),
-//				).Add(-1)
-//				if info.Error != nil {
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(TableNamePoolWait),
-//						name(NameError),
-//						errName(info.Error),
-//					).Add(1)
-//				}
-//			}
-//		}
-//	}
-//	if c.Details()&tablePoolYdbSqlAPIEvents != 0 {
-//		t.OnPoolTake = func(info trace.PoolTakeStartInfo) func(doneInfo trace.PoolTakeWaitInfo) func(doneInfo trace.PoolTakeDoneInfo) {
-//			start := time.Now()
-//			return func(info trace.PoolTakeWaitInfo) func(info trace.PoolTakeDoneInfo) {
-//				return func(info trace.PoolTakeDoneInfo) {
-//					timer(
-//						name(TableNamePool),
-//						name(TableNamePoolTake),
-//						name(NameLatency),
-//					).RecordDuration(time.Since(start))
-//					c.Gauge(
-//						name(TableNamePool),
-//						name(TableNamePoolTake),
-//					).Add(1)
-//					if info.Error != nil {
-//						c.Gauge(
-//							name(TableNamePool),
-//							name(TableNamePoolTake),
-//							name(NameError),
-//							errName(info.Error),
-//						).Add(1)
-//					}
-//				}
-//			}
-//		}
-//	}
-//	return t
-//}

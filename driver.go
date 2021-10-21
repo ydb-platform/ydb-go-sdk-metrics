@@ -41,7 +41,7 @@ func Driver(c Config) trace.Driver {
 			}
 			start := read.start(address)
 			return func(info trace.NetReadDoneInfo) {
-				start.sync(info.Error, address)
+				start.syncWithValue(info.Error, float64(info.Received), address)
 			}
 		}
 		t.OnNetWrite = func(info trace.NetWriteStartInfo) func(trace.NetWriteDoneInfo) {
@@ -51,7 +51,7 @@ func Driver(c Config) trace.Driver {
 			}
 			start := write.start(address)
 			return func(info trace.NetWriteDoneInfo) {
-				start.sync(info.Error, address)
+				start.syncWithValue(info.Error, float64(info.Sent), address)
 			}
 		}
 		t.OnNetDial = func(info trace.NetDialStartInfo) func(trace.NetDialDoneInfo) {
@@ -61,7 +61,9 @@ func Driver(c Config) trace.Driver {
 			}
 			start := dial.start(address)
 			return func(info trace.NetDialDoneInfo) {
-				start.sync(info.Error, address)
+				lables, _ := start.sync(info.Error, address)
+				// publish empty close call metric for register metrics on metrics storage
+				close.calls.With(lables...).Add(0)
 			}
 		}
 		t.OnNetClose = func(info trace.NetCloseStartInfo) func(trace.NetCloseDoneInfo) {
@@ -76,7 +78,7 @@ func Driver(c Config) trace.Driver {
 		}
 	}
 	if c.Details()&DriverCoreEvents != 0 {
-		c := c.WithSystem("net")
+		c := c.WithSystem("core")
 		take := callGauges(c, "take", TagAddress, TagDataCenter)
 		release := callGauges(c, "release", TagAddress, TagDataCenter)
 		states := callGauges(c, "state", TagAddress, TagDataCenter, TagState)
@@ -89,7 +91,7 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := take.start(address, dataCenter)
 			return func(info trace.ConnTakeDoneInfo) {
@@ -103,7 +105,7 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := release.start(address, dataCenter)
 			return func(info trace.ConnReleaseDoneInfo) {
@@ -117,23 +119,23 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			state := Label{
 				Tag:   TagState,
 				Value: info.State.String(),
 			}
 			var start *callTrace
-			if info.State.IsValid() {
+			//if info.State.IsValid() {
 				start = states.start(address, dataCenter, state)
-			}
+			//}
 			return func(info trace.ConnStateChangeDoneInfo) {
-				if start != nil && info.State.IsValid() {
+				//if start != nil && info.State.IsValid() {
 					start.sync(nil, address, dataCenter, Label{
 						Tag:   TagState,
 						Value: info.State.String(),
 					})
-				}
+				//}
 			}
 		}
 		t.OnConnInvoke = func(info trace.ConnInvokeStartInfo) func(trace.ConnInvokeDoneInfo) {
@@ -147,7 +149,7 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := invoke.start(address, dataCenter, method)
 			return func(info trace.ConnInvokeDoneInfo) {
@@ -165,10 +167,10 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := stream.start(address, dataCenter, method, Label{
-				Tag:   TagState,
+				Tag:   TagStage,
 				Value: "init",
 			})
 			return func(info trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
@@ -195,7 +197,7 @@ func Driver(c Config) trace.Driver {
 		}
 	}
 	if c.Details()&DriverClusterEvents != 0 {
-		c := c.WithSystem("discovery")
+		c := c.WithSystem("cluster")
 		get := callGauges(c, "get", TagAddress, TagDataCenter)
 		insert := callGauges(c, "insert", TagAddress, TagDataCenter)
 		remove := callGauges(c, "remove", TagAddress, TagDataCenter)
@@ -221,7 +223,7 @@ func Driver(c Config) trace.Driver {
 					},
 					Label{
 						Tag:   TagDataCenter,
-						Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+						Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 					},
 				)
 			}
@@ -233,7 +235,7 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := insert.start(address, dataCenter)
 			return func(info trace.ClusterInsertDoneInfo) {
@@ -247,7 +249,7 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := remove.start(address, dataCenter)
 			return func(info trace.ClusterRemoveDoneInfo) {
@@ -261,7 +263,7 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := update.start(address, dataCenter)
 			return func(info trace.ClusterUpdateDoneInfo) {
@@ -275,13 +277,12 @@ func Driver(c Config) trace.Driver {
 			}
 			dataCenter := Label{
 				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "true", "false"),
+				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := pessimize.start(address, dataCenter)
-			cause := info.Cause
 			return func(info trace.PessimizeNodeDoneInfo) {
 				// sync cause instead pessimize result error
-				start.sync(cause, address, dataCenter)
+				start.sync(nil, address, dataCenter)
 			}
 		}
 	}
