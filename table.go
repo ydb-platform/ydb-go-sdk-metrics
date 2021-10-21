@@ -204,7 +204,9 @@ func Table(c Config) trace.Table {
 			t.OnPoolSessionNew = func(info trace.PoolSessionNewStartInfo) func(trace.PoolSessionNewDoneInfo) {
 				start := new.start()
 				return func(info trace.PoolSessionNewDoneInfo) {
-					start.sync(info.Error)
+					lables, _ := start.sync(info.Error)
+					// publish empty close call metric for register metrics on metrics storage
+					close.calls.With(lables...).Add(0)
 				}
 			}
 			t.OnPoolSessionClose = func(info trace.PoolSessionCloseStartInfo) func(trace.PoolSessionCloseDoneInfo) {
@@ -215,7 +217,6 @@ func Table(c Config) trace.Table {
 			}
 		}
 		if c.Details()&tablePoolAPIEvents != 0 {
-			c := c.WithSystem("api")
 			put := callGauges(c, "put", TagNodeID)
 			get := callGauges(c, "get", TagNodeID)
 			wait := callGauges(c, "wait", TagNodeID)
@@ -248,7 +249,7 @@ func Table(c Config) trace.Table {
 						}
 						return ""
 					}()
-					start.sync(info.Error, nodeID)
+					start.syncWithValue(info.Error, float64(info.RetryAttempts), nodeID)
 				}
 			}
 			t.OnPoolWait = func(info trace.PoolWaitStartInfo) func(trace.PoolWaitDoneInfo) {
