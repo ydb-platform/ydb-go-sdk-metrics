@@ -19,10 +19,10 @@ func Driver(c Config) trace.Driver {
 			start := time.Now()
 			for {
 				time.Sleep(time.Second)
-				uptime.With(version).Set(time.Since(start).Seconds())
-				goroutines.With(version).Set(float64(runtime.NumGoroutine()))
+				uptime.With(labelsToKeyValue(version)).Set(time.Since(start).Seconds())
+				goroutines.With(labelsToKeyValue(version)).Set(float64(runtime.NumGoroutine()))
 				runtime.ReadMemStats(&stats)
-				memory.With(version).Set(float64(stats.Alloc))
+				memory.With(labelsToKeyValue(version)).Set(float64(stats.Alloc))
 			}
 		}()
 	}
@@ -63,7 +63,7 @@ func Driver(c Config) trace.Driver {
 			return func(info trace.NetDialDoneInfo) {
 				lables, _ := start.sync(info.Error, address)
 				// publish empty close call metric for register metrics on metrics storage
-				close.calls.With(lables...).Add(0)
+				close.calls.With(labelsToKeyValue(lables...)).Add(0)
 			}
 		}
 		t.OnNetClose = func(info trace.NetCloseStartInfo) func(trace.NetCloseDoneInfo) {
@@ -127,14 +127,14 @@ func Driver(c Config) trace.Driver {
 			}
 			var start *callTrace
 			//if info.State.IsValid() {
-				start = states.start(address, dataCenter, state)
+			start = states.start(address, dataCenter, state)
 			//}
 			return func(info trace.ConnStateChangeDoneInfo) {
 				//if start != nil && info.State.IsValid() {
-					start.sync(nil, address, dataCenter, Label{
-						Tag:   TagState,
-						Value: info.State.String(),
-					})
+				start.sync(nil, address, dataCenter, Label{
+					Tag:   TagState,
+					Value: info.State.String(),
+				})
 				//}
 			}
 		}
@@ -297,4 +297,20 @@ func Driver(c Config) trace.Driver {
 		}
 	}
 	return t
+}
+
+// Driver makes Driver with solomon metrics publishing
+func DriverWithRegistry(registry Registry, opts ...option) trace.Driver {
+	c := &config{
+		registry:  registry,
+		namespace: defaultNamespace,
+		separator: defaultSeparator,
+	}
+	for _, o := range opts {
+		o(c)
+	}
+	if c.details == 0 {
+		c.details = ^Details(0)
+	}
+	return Driver(c)
 }

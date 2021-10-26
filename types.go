@@ -8,6 +8,7 @@ import (
 	"net"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3"
@@ -137,7 +138,11 @@ type Gauge interface {
 
 // GaugeVec returns Gauge from GaugeVec by lables
 type GaugeVec interface {
-	With(labels ...Label) Gauge
+	With(map[string]string) Gauge
+}
+
+type Registry interface {
+	GaugeVec(name string, labels []string) GaugeVec
 }
 
 type Details int
@@ -204,13 +209,21 @@ type callScope struct {
 	errs    GaugeVec
 }
 
+func labelsToKeyValue(labels ...Label) map[string]string {
+	kv := make(map[string]string, len(labels))
+	for _, l := range labels {
+		kv[l.Tag] = l.Value
+	}
+	return kv
+}
+
 func (s callScope) start(labels ...Label) *callTrace {
-	s.calls.With(
+	s.calls.With(labelsToKeyValue(
 		append([]Label{version, Label{
 			Tag:   TagSuccess,
 			Value: "wip",
 		}}, labels...)...,
-	).Add(1)
+	)).Add(1)
 	return &callTrace{
 		start: time.Now(),
 		scope: &s,
@@ -224,7 +237,7 @@ type callTrace struct {
 
 func (t *callTrace) syncWithValue(error error, value float64, labels ...Label) {
 	t.sync(error, labels...)
-	t.scope.value.With(append([]Label{version}, labels...)...).Set(value)
+	t.scope.value.With(labelsToKeyValue(append([]Label{version}, labels...)...)).Set(value)
 }
 
 func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) {
@@ -232,8 +245,8 @@ func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) {
 		Tag:   TagSuccess,
 		Value: ifStr(ok, "true", "false"),
 	}
-	t.scope.calls.With(append([]Label{version, success}, labels...)...).Add(1)
-	t.scope.latency.With(append([]Label{version, success}, labels...)...).Set(float64(time.Since(t.start).Nanoseconds()))
+	t.scope.calls.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Add(1)
+	t.scope.latency.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Set(float64(time.Since(t.start).Nanoseconds()))
 }
 
 func (t *callTrace) sync(e error, labels ...Label) (callLables []Label, errLabels []Label) {
@@ -242,11 +255,11 @@ func (t *callTrace) sync(e error, labels ...Label) (callLables []Label, errLabel
 		Value: ifStr(e == nil, "true", "false"),
 	}
 	callLables = append([]Label{version, success}, labels...)
-	t.scope.calls.With(callLables...).Add(1)
-	t.scope.latency.With(callLables...).Set(float64(time.Since(t.start).Nanoseconds()))
+	t.scope.calls.With(labelsToKeyValue(callLables...)).Add(1)
+	t.scope.latency.With(labelsToKeyValue(callLables...)).Set(float64(time.Since(t.start).Nanoseconds()))
 	if e != nil {
 		errLabels = err(e, append([]Label{version}, labels...)...)
-		t.scope.errs.With(errLabels...).Add(1)
+		t.scope.errs.With(labelsToKeyValue(errLabels...)).Add(1)
 	}
 	return
 }
@@ -258,5 +271,76 @@ func callGauges(c Config, scope string, tags ...string) (s *callScope) {
 		calls:   c.GaugeVec("calls", "calls of "+scope, append([]string{TagSuccess, TagVersion}, tags...)...),
 		value:   c.GaugeVec("value", "value of "+scope, append([]string{TagVersion}, tags...)...),
 		errs:    c.GaugeVec("errors", "errors of "+scope, append([]string{TagVersion, TagError, TagErrCode}, tags...)...),
+	}
+}
+
+const (
+	defaultNamespace = "ydb_go_sdk"
+	defaultSeparator = "/"
+)
+
+type config struct {
+	details   Details
+	separator string
+	registry  Registry
+	namespace string
+
+	m      sync.Mutex
+	gauges map[string]GaugeVec
+}
+
+func (c *config) join(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return ""
+	}
+	return strings.Join([]string{a, b}, c.separator)
+}
+
+func (c *config) WithSystem(subsystem string) Config {
+	return &config{
+		separator: c.separator,
+		details:   c.details,
+		registry:  c.registry,
+		namespace: c.join(c.namespace, subsystem),
+		gauges:    make(map[string]GaugeVec),
+	}
+}
+
+func (c *config) Details() Details {
+	return c.details
+}
+
+func (c *config) GaugeVec(name string, _ string, labelNames ...string) GaugeVec {
+	name = c.join(c.namespace, name)
+	c.m.Lock()
+	defer c.m.Unlock()
+	if g, ok := c.gauges[name]; ok {
+		return g
+	}
+	g := c.registry.GaugeVec(name, append([]string{}, labelNames...))
+	c.gauges[name] = g
+	return g
+}
+
+type option func(*config)
+
+func WithNamespace(namespace string) option {
+	return func(c *config) {
+		c.namespace = namespace
+	}
+}
+
+func WithDetails(details Details) option {
+	return func(c *config) {
+		c.details = details
+	}
+}
+
+func WithSeparator(separator string) option {
+	return func(c *config) {
+		c.separator = separator
 	}
 }

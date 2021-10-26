@@ -61,7 +61,7 @@ func Table(c Config) trace.Table {
 					}
 					lables, _ := start.sync(info.Error, nodeID)
 					// publish empty delete call metric for register metrics on metrics storage
-					delete.calls.With(lables...).Add(0)
+					delete.calls.With(labelsToKeyValue(lables...)).Add(0)
 				}
 			}
 			t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
@@ -206,7 +206,7 @@ func Table(c Config) trace.Table {
 				return func(info trace.PoolSessionNewDoneInfo) {
 					lables, _ := start.sync(info.Error)
 					// publish empty close call metric for register metrics on metrics storage
-					close.calls.With(lables...).Add(0)
+					close.calls.With(labelsToKeyValue(lables...)).Add(0)
 				}
 			}
 			t.OnPoolSessionClose = func(info trace.PoolSessionCloseStartInfo) func(trace.PoolSessionCloseDoneInfo) {
@@ -295,4 +295,21 @@ func Table(c Config) trace.Table {
 		}
 	}
 	return t
+}
+
+// Table makes table.ClientTrace with solomon metrics publishing
+func TableWithRegistry(registry Registry, opts ...option) trace.Table {
+	c := &config{
+		registry:  registry,
+		namespace: defaultNamespace,
+		separator: defaultSeparator,
+	}
+	for _, o := range opts {
+		o(c)
+	}
+
+	if c.details == 0 {
+		c.details = ^Details(0)
+	}
+	return Table(c)
 }

@@ -40,6 +40,8 @@ github.com/ydb-platform/ydb-go-sdk/v3 v3.0.0-release h1:lLRKgKGsTKfZH561kpjflQlj
 github.com/ydb-platform/ydb-go-sdk/v3 v3.0.0-release/go.mod h1:RQPu87luEv7anp2YyDwijy/SXn+mrMaLRW800P40DoQ=
 github.com/ydb-platform/ydb-go-sdk/v3 v3.0.0 h1:32zXZLh65mTh11Trb9FXo6mbGPJFFCCfaEgDCE4OCKo=
 github.com/ydb-platform/ydb-go-sdk/v3 v3.0.0/go.mod h1:AVrHVTBBQQP93j4V1LduAq90BvFZAu0XNtkekY+ypDQ=
+github.com/ydb-platform/ydb-go-sdk/v3 v3.0.1-rc1 h1:j4oYxr0Z6ghZrswCnaqvz6hjkbx0R2dN4hleHCas5fU=
+github.com/ydb-platform/ydb-go-sdk/v3 v3.0.1-rc1/go.mod h1:aDAMirAXDdCeMRJV01EykAXXz6Ye2eM7H7PRJb6DvHo=
 github.com/ydb-platform/ydb-go-sdk/v3 v3.0.1 h1:3PcaUW/oi1xF6ufQLZ2H8WWZzDbibQnjozP8QyMIfbY=
 github.com/ydb-platform/ydb-go-sdk/v3 v3.0.1/go.mod h1:J7/U2G5CkonthKt107njFNLefGXEH40WaEI59ghEVPQ=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
