@@ -297,7 +297,7 @@ func Table(c Config) trace.Table {
 	return t
 }
 
-// Table makes table.ClientTrace with solomon metrics publishing
+// TableWithRegistry makes trace.Table with metrics registry and options
 func TableWithRegistry(registry Registry, opts ...option) trace.Table {
 	c := &config{
 		registry:  registry,

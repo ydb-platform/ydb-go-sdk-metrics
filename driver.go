@@ -299,7 +299,7 @@ func Driver(c Config) trace.Driver {
 	return t
 }
 
-// Driver makes Driver with solomon metrics publishing
+// DriverWithRegistry makes trace.Driver with metrics registry and options
 func DriverWithRegistry(registry Registry, opts ...option) trace.Driver {
 	c := &config{
 		registry:  registry,
