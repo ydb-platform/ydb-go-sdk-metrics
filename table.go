@@ -249,7 +249,7 @@ func Table(c Config) trace.Table {
 						}
 						return ""
 					}()
-					start.syncWithValue(info.Error, float64(info.RetryAttempts), nodeID)
+					start.syncWithValue(info.Error, float64(info.Attempts), nodeID)
 				}
 			}
 			t.OnPoolWait = func(info trace.PoolWaitStartInfo) func(trace.PoolWaitDoneInfo) {
