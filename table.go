@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
-	"strconv"
 )
 
 func Table(c Config) trace.Table {
@@ -54,7 +53,7 @@ func Table(c Config) trace.Table {
 						Tag: TagNodeID,
 						Value: func() string {
 							if info.Session != nil {
-								return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+								return nodeID(info.Session.ID())
 							}
 							return ""
 						}(),
@@ -67,7 +66,7 @@ func Table(c Config) trace.Table {
 			t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
 				nodeID := Label{
 					Tag:   TagNodeID,
-					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					Value: nodeID(info.Session.ID()),
 				}
 				start := delete.start(nodeID)
 				return func(info trace.SessionDeleteDoneInfo) {
@@ -77,7 +76,7 @@ func Table(c Config) trace.Table {
 			t.OnSessionKeepAlive = func(info trace.KeepAliveStartInfo) func(trace.KeepAliveDoneInfo) {
 				nodeID := Label{
 					Tag:   TagNodeID,
-					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					Value: nodeID(info.Session.ID()),
 				}
 				start := keepAlive.start(nodeID)
 				return func(info trace.KeepAliveDoneInfo) {
@@ -94,7 +93,7 @@ func Table(c Config) trace.Table {
 				t.OnSessionQueryPrepare = func(info trace.SessionQueryPrepareStartInfo) func(trace.PrepareDataQueryDoneInfo) {
 					nodeID := Label{
 						Tag:   TagNodeID,
-						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+						Value: nodeID(info.Session.ID()),
 					}
 					start := prepare.start(nodeID)
 					return func(info trace.PrepareDataQueryDoneInfo) {
@@ -104,7 +103,7 @@ func Table(c Config) trace.Table {
 				t.OnSessionQueryExecute = func(info trace.ExecuteDataQueryStartInfo) func(trace.SessionQueryPrepareDoneInfo) {
 					nodeID := Label{
 						Tag:   TagNodeID,
-						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+						Value: nodeID(info.Session.ID()),
 					}
 					start := execute.start(nodeID)
 					return func(info trace.SessionQueryPrepareDoneInfo) {
@@ -119,7 +118,7 @@ func Table(c Config) trace.Table {
 				t.OnSessionQueryStreamExecute = func(info trace.SessionQueryStreamExecuteStartInfo) func(trace.SessionQueryStreamExecuteDoneInfo) {
 					nodeID := Label{
 						Tag:   TagNodeID,
-						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+						Value: nodeID(info.Session.ID()),
 					}
 					start := execute.start(nodeID)
 					return func(info trace.SessionQueryStreamExecuteDoneInfo) {
@@ -129,7 +128,7 @@ func Table(c Config) trace.Table {
 				t.OnSessionQueryStreamRead = func(info trace.SessionQueryStreamReadStartInfo) func(trace.SessionQueryStreamReadDoneInfo) {
 					nodeID := Label{
 						Tag:   TagNodeID,
-						Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+						Value: nodeID(info.Session.ID()),
 					}
 					start := read.start(nodeID)
 					return func(info trace.SessionQueryStreamReadDoneInfo) {
@@ -146,7 +145,7 @@ func Table(c Config) trace.Table {
 			t.OnSessionTransactionBegin = func(info trace.SessionTransactionBeginStartInfo) func(trace.SessionTransactionBeginDoneInfo) {
 				nodeID := Label{
 					Tag:   TagNodeID,
-					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					Value: nodeID(info.Session.ID()),
 				}
 				start := begin.start(nodeID)
 				return func(info trace.SessionTransactionBeginDoneInfo) {
@@ -156,7 +155,7 @@ func Table(c Config) trace.Table {
 			t.OnSessionTransactionCommit = func(info trace.SessionTransactionCommitStartInfo) func(trace.SessionTransactionCommitDoneInfo) {
 				nodeID := Label{
 					Tag:   TagNodeID,
-					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					Value: nodeID(info.Session.ID()),
 				}
 				start := commit.start(nodeID)
 				return func(info trace.SessionTransactionCommitDoneInfo) {
@@ -166,7 +165,7 @@ func Table(c Config) trace.Table {
 			t.OnSessionTransactionRollback = func(info trace.SessionTransactionRollbackStartInfo) func(trace.SessionTransactionRollbackDoneInfo) {
 				nodeID := Label{
 					Tag:   TagNodeID,
-					Value: strconv.FormatUint(uint64(info.Session.NodeID()), 10),
+					Value: nodeID(info.Session.ID()),
 				}
 				start := rollback.start(nodeID)
 				return func(info trace.SessionTransactionRollbackDoneInfo) {
@@ -226,7 +225,7 @@ func Table(c Config) trace.Table {
 					Tag: TagNodeID,
 					Value: func() string {
 						if info.Session != nil {
-							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+							return nodeID(info.Session.ID())
 						}
 						return ""
 					}(),
@@ -237,35 +236,35 @@ func Table(c Config) trace.Table {
 				}
 			}
 			t.OnPoolGet = func(info trace.PoolGetStartInfo) func(trace.PoolGetDoneInfo) {
-				nodeID := Label{
+				node := Label{
 					Tag:   TagNodeID,
 					Value: "wip",
 				}
-				start := get.start(nodeID)
+				start := get.start(node)
 				return func(info trace.PoolGetDoneInfo) {
-					nodeID.Value = func() string {
+					node.Value = func() string {
 						if info.Session != nil {
-							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+							return nodeID(info.Session.ID())
 						}
 						return ""
 					}()
-					start.syncWithValue(info.Error, float64(info.Attempts), nodeID)
+					start.syncWithValue(info.Error, float64(info.Attempts), node)
 				}
 			}
 			t.OnPoolWait = func(info trace.PoolWaitStartInfo) func(trace.PoolWaitDoneInfo) {
-				nodeID := Label{
+				node := Label{
 					Tag:   TagNodeID,
 					Value: "wip",
 				}
-				start := wait.start(nodeID)
+				start := wait.start(node)
 				return func(info trace.PoolWaitDoneInfo) {
-					nodeID.Value = func() string {
+					node.Value = func() string {
 						if info.Session != nil {
-							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+							return nodeID(info.Session.ID())
 						}
 						return ""
 					}()
-					start.sync(info.Error, nodeID)
+					start.sync(info.Error, node)
 				}
 			}
 			t.OnPoolTake = func(info trace.PoolTakeStartInfo) func(doneInfo trace.PoolTakeWaitInfo) func(doneInfo trace.PoolTakeDoneInfo) {
@@ -273,7 +272,7 @@ func Table(c Config) trace.Table {
 					Tag: TagNodeID,
 					Value: func() string {
 						if info.Session != nil {
-							return strconv.FormatUint(uint64(info.Session.NodeID()), 10)
+							return nodeID(info.Session.ID())
 						}
 						return ""
 					}(),

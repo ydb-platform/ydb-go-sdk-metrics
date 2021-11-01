@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -343,4 +344,12 @@ func WithSeparator(separator string) option {
 	return func(c *config) {
 		c.separator = separator
 	}
+}
+
+func nodeID(sessionID string) string {
+	u, err := url.Parse(sessionID)
+	if err != nil {
+		panic(err)
+	}
+	return u.Query().Get("node_id")
 }
