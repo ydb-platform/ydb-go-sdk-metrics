@@ -7,7 +7,7 @@ import (
 func Table(c Config) trace.Table {
 	c = c.WithSystem("table")
 	t := trace.Table{}
-	if c.Details()&tablePoolRetryEvents != 0 {
+	if c.Details()&trace.TablePoolRetryEvents != 0 {
 		retry := callGauges(c, "retry", TagIdempotent, TagStage)
 		t.OnPoolRetry = func(info trace.PoolRetryStartInfo) func(info trace.PoolRetryInternalInfo) func(trace.PoolRetryDoneInfo) {
 			idempotent := Label{
@@ -37,9 +37,9 @@ func Table(c Config) trace.Table {
 			}
 		}
 	}
-	if c.Details()&TableSessionEvents != 0 {
+	if c.Details()&trace.TableSessionEvents != 0 {
 		c := c.WithSystem("session")
-		if c.Details()&tableSessionEvents != 0 {
+		if c.Details()&trace.TableSessionLifeCycleEvents != 0 {
 			new := callGauges(c, "new", TagNodeID)
 			delete := callGauges(c, "delete", TagNodeID)
 			keepAlive := callGauges(c, "keep_alive", TagNodeID)
@@ -84,9 +84,9 @@ func Table(c Config) trace.Table {
 				}
 			}
 		}
-		if c.Details()&tableSessionQueryEvents != 0 {
+		if c.Details()&trace.TableSessionQueryEvents != 0 {
 			c := c.WithSystem("query")
-			if c.Details()&tableSessionQueryInvokeEvents != 0 {
+			if c.Details()&trace.TableSessionQueryInvokeEvents != 0 {
 				c := c.WithSystem("invoke")
 				prepare := callGauges(c, "prepare", TagNodeID)
 				execute := callGauges(c, "execute", TagNodeID)
@@ -111,7 +111,7 @@ func Table(c Config) trace.Table {
 					}
 				}
 			}
-			if c.Details()&tableSessionQueryStreamEvents != 0 {
+			if c.Details()&trace.TableSessionQueryStreamEvents != 0 {
 				c := c.WithSystem("stream")
 				read := callGauges(c, "read", TagNodeID)
 				execute := callGauges(c, "execute", TagNodeID)
@@ -137,7 +137,7 @@ func Table(c Config) trace.Table {
 				}
 			}
 		}
-		if c.Details()&tableSessionTransactionEvents != 0 {
+		if c.Details()&trace.TableSessionTransactionEvents != 0 {
 			c := c.WithSystem("transaction")
 			begin := callGauges(c, "begin", TagNodeID)
 			commit := callGauges(c, "commit", TagNodeID)
@@ -174,9 +174,9 @@ func Table(c Config) trace.Table {
 			}
 		}
 	}
-	if c.Details()&TablePoolEvents != 0 {
+	if c.Details()&trace.TablePoolEvents != 0 {
 		c := c.WithSystem("pool")
-		if c.Details()&tablePoolLifeCycleEvents != 0 {
+		if c.Details()&trace.TablePoolLifeCycleEvents != 0 {
 			min := callGauges(c, "min")
 			max := callGauges(c, "max")
 			t.OnPoolInit = func(info trace.PoolInitStartInfo) func(trace.PoolInitDoneInfo) {
@@ -196,7 +196,7 @@ func Table(c Config) trace.Table {
 				}
 			}
 		}
-		if c.Details()&tablePoolSessionLifeCycleEvents != 0 {
+		if c.Details()&trace.TablePoolSessionLifeCycleEvents != 0 {
 			c := c.WithSystem("session")
 			new := callGauges(c, "new")
 			close := callGauges(c, "close")
@@ -215,7 +215,7 @@ func Table(c Config) trace.Table {
 				}
 			}
 		}
-		if c.Details()&tablePoolAPIEvents != 0 {
+		if c.Details()&trace.TablePoolAPIEvents != 0 {
 			put := callGauges(c, "put", TagNodeID)
 			get := callGauges(c, "get", TagNodeID)
 			wait := callGauges(c, "wait", TagNodeID)
@@ -262,7 +262,7 @@ func Table(c Config) trace.Table {
 						if info.Session != nil {
 							return nodeID(info.Session.ID())
 						}
-						return ""
+						return "-"
 					}()
 					start.sync(info.Error, node)
 				}
@@ -294,21 +294,4 @@ func Table(c Config) trace.Table {
 		}
 	}
 	return t
-}
-
-// TableWithRegistry makes trace.Table with metrics registry and options
-func TableWithRegistry(registry Registry, opts ...option) trace.Table {
-	c := &config{
-		registry:  registry,
-		namespace: defaultNamespace,
-		separator: defaultSeparator,
-	}
-	for _, o := range opts {
-		o(c)
-	}
-
-	if c.details == 0 {
-		c.details = ^Details(0)
-	}
-	return Table(c)
 }

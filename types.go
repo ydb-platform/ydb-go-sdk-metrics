@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3"
+	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
 type Label struct {
@@ -146,31 +147,6 @@ type Registry interface {
 	GaugeVec(name string, labels []string) GaugeVec
 }
 
-type Details int
-
-const (
-	DriverSystemEvents = Details(1 << iota)
-	DriverClusterEvents
-	driverNetEvents
-	DriverCoreEvents
-	DriverCredentialsEvents
-	DriverDiscoveryEvents
-
-	tableSessionEvents
-	tableSessionQueryInvokeEvents
-	tableSessionQueryStreamEvents
-	tableSessionTransactionEvents
-	tablePoolLifeCycleEvents
-	tablePoolRetryEvents
-	tablePoolSessionLifeCycleEvents
-	tablePoolAPIEvents
-
-	DriverConnEvents        = driverNetEvents | DriverCoreEvents
-	tableSessionQueryEvents = tableSessionQueryInvokeEvents | tableSessionQueryStreamEvents
-	TableSessionEvents      = tableSessionEvents | tableSessionQueryEvents | tableSessionTransactionEvents
-	TablePoolEvents         = tablePoolLifeCycleEvents | tablePoolRetryEvents | tablePoolSessionLifeCycleEvents | tablePoolAPIEvents
-)
-
 var (
 	version = Label{
 		Tag: TagVersion,
@@ -184,7 +160,7 @@ var (
 type Config interface {
 	// Details returns bitmask for customize details of metrics
 	// If zero - use full set of driver metrics
-	Details() Details
+	Details() trace.Details
 
 	// GaugeVec returns GaugeVec by name, subsystem and labels
 	// If gauge by args already created - return gauge from cache
@@ -281,7 +257,7 @@ const (
 )
 
 type config struct {
-	details   Details
+	details   trace.Details
 	separator string
 	registry  Registry
 	namespace string
@@ -310,7 +286,7 @@ func (c *config) WithSystem(subsystem string) Config {
 	}
 }
 
-func (c *config) Details() Details {
+func (c *config) Details() trace.Details {
 	return c.details
 }
 
@@ -334,7 +310,7 @@ func WithNamespace(namespace string) option {
 	}
 }
 
-func WithDetails(details Details) option {
+func WithDetails(details trace.Details) option {
 	return func(c *config) {
 		c.details = details
 	}

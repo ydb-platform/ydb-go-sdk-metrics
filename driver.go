@@ -9,7 +9,7 @@ import (
 
 // Driver makes Driver with metrics publishing
 func Driver(c Config) trace.Driver {
-	if c.Details()&DriverSystemEvents != 0 {
+	if c.Details()&trace.DriverSystemEvents != 0 {
 		c := c.WithSystem("system")
 		goroutines := c.GaugeVec("goroutines", "active goroutines", TagVersion)
 		memory := c.GaugeVec("memory", "memory in bytes", TagVersion)
@@ -28,7 +28,7 @@ func Driver(c Config) trace.Driver {
 	}
 	c = c.WithSystem("driver")
 	t := trace.Driver{}
-	if c.Details()&driverNetEvents != 0 {
+	if c.Details()&trace.DriverNetEvents != 0 {
 		c := c.WithSystem("net")
 		read := callGauges(c, "read", TagAddress)
 		write := callGauges(c, "write", TagAddress)
@@ -77,7 +77,7 @@ func Driver(c Config) trace.Driver {
 			}
 		}
 	}
-	if c.Details()&DriverCoreEvents != 0 {
+	if c.Details()&trace.DriverCoreEvents != 0 {
 		c := c.WithSystem("core")
 		take := callGauges(c, "take", TagAddress, TagDataCenter)
 		release := callGauges(c, "release", TagAddress, TagDataCenter)
@@ -121,21 +121,15 @@ func Driver(c Config) trace.Driver {
 				Tag:   TagDataCenter,
 				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			state := Label{
+			start := states.start(address, dataCenter, Label{
 				Tag:   TagState,
 				Value: info.State.String(),
-			}
-			var start *callTrace
-			//if info.State.IsValid() {
-			start = states.start(address, dataCenter, state)
-			//}
+			})
 			return func(info trace.ConnStateChangeDoneInfo) {
-				//if start != nil && info.State.IsValid() {
 				start.sync(nil, address, dataCenter, Label{
 					Tag:   TagState,
 					Value: info.State.String(),
 				})
-				//}
 			}
 		}
 		t.OnConnInvoke = func(info trace.ConnInvokeStartInfo) func(trace.ConnInvokeDoneInfo) {
@@ -187,7 +181,7 @@ func Driver(c Config) trace.Driver {
 			}
 		}
 	}
-	if c.Details()&DriverDiscoveryEvents != 0 {
+	if c.Details()&trace.DriverDiscoveryEvents != 0 {
 		discovery := callGauges(c, "discovery")
 		t.OnDiscovery = func(info trace.DiscoveryStartInfo) func(trace.DiscoveryDoneInfo) {
 			start := discovery.start()
@@ -196,7 +190,7 @@ func Driver(c Config) trace.Driver {
 			}
 		}
 	}
-	if c.Details()&DriverClusterEvents != 0 {
+	if c.Details()&trace.DriverClusterEvents != 0 {
 		c := c.WithSystem("cluster")
 		get := callGauges(c, "get", TagAddress, TagDataCenter)
 		insert := callGauges(c, "insert", TagAddress, TagDataCenter)
@@ -286,7 +280,7 @@ func Driver(c Config) trace.Driver {
 			}
 		}
 	}
-	if c.Details()&DriverCredentialsEvents != 0 {
+	if c.Details()&trace.DriverCredentialsEvents != 0 {
 		c := c.WithSystem("credentials")
 		get := callGauges(c, "get")
 		t.OnGetCredentials = func(info trace.GetCredentialsStartInfo) func(trace.GetCredentialsDoneInfo) {
@@ -297,20 +291,4 @@ func Driver(c Config) trace.Driver {
 		}
 	}
 	return t
-}
-
-// DriverWithRegistry makes trace.Driver with metrics registry and options
-func DriverWithRegistry(registry Registry, opts ...option) trace.Driver {
-	c := &config{
-		registry:  registry,
-		namespace: defaultNamespace,
-		separator: defaultSeparator,
-	}
-	for _, o := range opts {
-		o(c)
-	}
-	if c.details == 0 {
-		c.details = ^Details(0)
-	}
-	return Driver(c)
 }
