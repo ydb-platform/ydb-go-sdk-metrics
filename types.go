@@ -251,11 +251,6 @@ func callGauges(c Config, scope string, tags ...string) (s *callScope) {
 	}
 }
 
-const (
-	defaultNamespace = "ydb_go_sdk"
-	defaultSeparator = "/"
-)
-
 type config struct {
 	details   trace.Details
 	separator string
