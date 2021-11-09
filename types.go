@@ -214,7 +214,9 @@ type callTrace struct {
 
 func (t *callTrace) syncWithValue(error error, value float64, labels ...Label) {
 	t.sync(error, labels...)
-	t.scope.value.With(labelsToKeyValue(append([]Label{version}, labels...)...)).Set(value)
+	if error == nil {
+		t.scope.value.With(labelsToKeyValue(append([]Label{version}, labels...)...)).Set(value)
+	}
 }
 
 func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) {
