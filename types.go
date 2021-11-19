@@ -93,29 +93,29 @@ func err(err error, labels ...Label) []Label {
 			},
 		)
 	}
-	if ok, code, text := ydb.IsTransportError(err); ok {
+	if d := ydb.TransportErrorDescription(err); d != nil {
 		return append(
 			labels,
 			Label{
 				Tag:   TagError,
-				Value: "transport/" + text,
+				Value: "transport/" + d.Name(),
 			},
 			Label{
 				Tag:   TagErrCode,
-				Value: fmt.Sprintf("%06d", code),
+				Value: fmt.Sprintf("%06d", d.Code()),
 			},
 		)
 	}
-	if ok, code, text := ydb.IsOperationError(err); ok {
+	if d := ydb.OperationErrorDescription(err); d != nil {
 		return append(
 			labels,
 			Label{
 				Tag:   TagError,
-				Value: "operation/" + text,
+				Value: "operation/" + d.Name(),
 			},
 			Label{
 				Tag:   TagErrCode,
-				Value: fmt.Sprintf("%06d", code),
+				Value: fmt.Sprintf("%06d", d.Code()),
 			},
 		)
 	}
@@ -213,29 +213,24 @@ type callTrace struct {
 }
 
 func (t *callTrace) syncWithValue(error error, value float64, labels ...Label) {
-	t.sync(error, labels...)
+	t.syncWithSuccess(error == nil, labels...)
 	if error == nil {
 		t.scope.value.With(labelsToKeyValue(append([]Label{version}, labels...)...)).Set(value)
 	}
 }
 
-func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) {
+func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) (callLabels []Label) {
 	success := Label{
 		Tag:   TagSuccess,
 		Value: ifStr(ok, "true", "false"),
 	}
 	t.scope.calls.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Add(1)
 	t.scope.latency.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Set(float64(time.Since(t.start).Nanoseconds()))
+	return append([]Label{version, success}, labels...)
 }
 
-func (t *callTrace) sync(e error, labels ...Label) (callLables []Label, errLabels []Label) {
-	success := Label{
-		Tag:   TagSuccess,
-		Value: ifStr(e == nil, "true", "false"),
-	}
-	callLables = append([]Label{version, success}, labels...)
-	t.scope.calls.With(labelsToKeyValue(callLables...)).Add(1)
-	t.scope.latency.With(labelsToKeyValue(callLables...)).Set(float64(time.Since(t.start).Nanoseconds()))
+func (t *callTrace) sync(e error, labels ...Label) (callLabels []Label, errLabels []Label) {
+	callLabels = t.syncWithSuccess(e == nil, labels...)
 	if e != nil {
 		errLabels = err(e, append([]Label{version}, labels...)...)
 		t.scope.errs.With(labelsToKeyValue(errLabels...)).Add(1)
