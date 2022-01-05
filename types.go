@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3"
@@ -143,8 +142,26 @@ type GaugeVec interface {
 	With(map[string]string) Gauge
 }
 
+// TimerVec stores multiple dynamically created timers
+type TimerVec interface {
+	With(map[string]string) Timer
+}
+
+// Timer tracks distribution of value.
+type Timer interface {
+	Record(d time.Duration)
+}
+
 type Registry interface {
-	GaugeVec(name string, labels []string) GaugeVec
+	// GaugeVec returns GaugeVec by name, subsystem and labels
+	// If gauge by args already created - return gauge from cache
+	// If gauge by args nothing - create and return newest gauge
+	GaugeVec(name string, labelNames ...string) GaugeVec
+
+	// TimerVec returns TimerVec by name, subsystem and labels
+	// If timer by args already created - return timer from cache
+	// If timer by args nothing - create and return newest timer
+	TimerVec(name string, labelNames ...string) TimerVec
 }
 
 var (
@@ -158,14 +175,11 @@ var (
 )
 
 type Config interface {
+	Registry
+
 	// Details returns bitmask for customize details of metrics
 	// If zero - use full set of driver metrics
 	Details() trace.Details
-
-	// GaugeVec returns GaugeVec by name, subsystem and labels
-	// If gauge by args already created - return gauge from cache
-	// If gauge by args nothing - create and return newest gauge
-	GaugeVec(name string, description string, labelNames ...string) GaugeVec
 
 	// WithSystem returns new Config with subsystem scope
 	// Separator for split scopes of metrics provided Config implementation
@@ -180,7 +194,7 @@ func ifStr(cond bool, true, false string) string {
 }
 
 type callScope struct {
-	latency GaugeVec
+	latency TimerVec
 	calls   GaugeVec
 	value   GaugeVec
 	errs    GaugeVec
@@ -196,20 +210,20 @@ func labelsToKeyValue(labels ...Label) map[string]string {
 
 func (s callScope) start(labels ...Label) *callTrace {
 	s.calls.With(labelsToKeyValue(
-		append([]Label{version, Label{
+		append([]Label{version, {
 			Tag:   TagSuccess,
 			Value: "wip",
 		}}, labels...)...,
 	)).Add(1)
 	return &callTrace{
-		start: time.Now(),
 		scope: &s,
+		start: time.Now(),
 	}
 }
 
 type callTrace struct {
-	start time.Time
 	scope *callScope
+	start time.Time
 }
 
 func (t *callTrace) syncWithValue(error error, value float64, labels ...Label) {
@@ -225,7 +239,7 @@ func (t *callTrace) syncWithSuccess(ok bool, labels ...Label) (callLabels []Labe
 		Value: ifStr(ok, "true", "false"),
 	}
 	t.scope.calls.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Add(1)
-	t.scope.latency.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Set(float64(time.Since(t.start).Nanoseconds()))
+	t.scope.latency.With(labelsToKeyValue(append([]Label{version, success}, labels...)...)).Record(time.Since(t.start))
 	return append([]Label{version, success}, labels...)
 }
 
@@ -238,79 +252,13 @@ func (t *callTrace) sync(e error, labels ...Label) (callLabels []Label, errLabel
 	return
 }
 
-func callGauges(c Config, scope string, tags ...string) (s *callScope) {
+func metrics(c Config, scope string, tags ...string) (s *callScope) {
 	c = c.WithSystem(scope)
 	return &callScope{
-		latency: c.GaugeVec("latency", "latency of "+scope, append([]string{TagSuccess, TagVersion}, tags...)...),
-		calls:   c.GaugeVec("calls", "calls of "+scope, append([]string{TagSuccess, TagVersion}, tags...)...),
-		value:   c.GaugeVec("value", "value of "+scope, append([]string{TagVersion}, tags...)...),
-		errs:    c.GaugeVec("errors", "errors of "+scope, append([]string{TagVersion, TagError, TagErrCode}, tags...)...),
-	}
-}
-
-type config struct {
-	details   trace.Details
-	separator string
-	registry  Registry
-	namespace string
-
-	m      sync.Mutex
-	gauges map[string]GaugeVec
-}
-
-func (c *config) join(a, b string) string {
-	if a == "" {
-		return b
-	}
-	if b == "" {
-		return ""
-	}
-	return strings.Join([]string{a, b}, c.separator)
-}
-
-func (c *config) WithSystem(subsystem string) Config {
-	return &config{
-		separator: c.separator,
-		details:   c.details,
-		registry:  c.registry,
-		namespace: c.join(c.namespace, subsystem),
-		gauges:    make(map[string]GaugeVec),
-	}
-}
-
-func (c *config) Details() trace.Details {
-	return c.details
-}
-
-func (c *config) GaugeVec(name string, _ string, labelNames ...string) GaugeVec {
-	name = c.join(c.namespace, name)
-	c.m.Lock()
-	defer c.m.Unlock()
-	if g, ok := c.gauges[name]; ok {
-		return g
-	}
-	g := c.registry.GaugeVec(name, append([]string{}, labelNames...))
-	c.gauges[name] = g
-	return g
-}
-
-type option func(*config)
-
-func WithNamespace(namespace string) option {
-	return func(c *config) {
-		c.namespace = namespace
-	}
-}
-
-func WithDetails(details trace.Details) option {
-	return func(c *config) {
-		c.details = details
-	}
-}
-
-func WithSeparator(separator string) option {
-	return func(c *config) {
-		c.separator = separator
+		latency: c.TimerVec("latency", append([]string{TagSuccess, TagVersion}, tags...)...),
+		calls:   c.GaugeVec("calls", append([]string{TagSuccess, TagVersion}, tags...)...),
+		value:   c.GaugeVec("value", append([]string{TagVersion}, tags...)...),
+		errs:    c.GaugeVec("errors", append([]string{TagVersion, TagError, TagErrCode}, tags...)...),
 	}
 }
 
