@@ -11,9 +11,9 @@ import (
 func Driver(c Config) trace.Driver {
 	if c.Details()&trace.DriverSystemEvents != 0 {
 		c := c.WithSystem("system")
-		goroutines := c.GaugeVec("goroutines", "active goroutines", TagVersion)
-		memory := c.GaugeVec("memory", "memory in bytes", TagVersion)
-		uptime := c.GaugeVec("uptime", "total uptime in seconds", TagVersion)
+		goroutines := c.GaugeVec("goroutines", TagVersion)
+		memory := c.GaugeVec("memory", TagVersion)
+		uptime := c.GaugeVec("uptime", TagVersion)
 		go func() {
 			var stats runtime.MemStats
 			start := time.Now()
@@ -30,10 +30,10 @@ func Driver(c Config) trace.Driver {
 	t := trace.Driver{}
 	if c.Details()&trace.DriverNetEvents != 0 {
 		c := c.WithSystem("net")
-		read := callGauges(c, "read", TagAddress)
-		write := callGauges(c, "write", TagAddress)
-		dial := callGauges(c, "dial", TagAddress)
-		close := callGauges(c, "close", TagAddress)
+		read := metrics(c, "read", TagAddress)
+		write := metrics(c, "write", TagAddress)
+		dial := metrics(c, "dial", TagAddress)
+		close := metrics(c, "close", TagAddress)
 		t.OnNetRead = func(info trace.NetReadStartInfo) func(trace.NetReadDoneInfo) {
 			address := Label{
 				Tag:   TagAddress,
@@ -79,11 +79,11 @@ func Driver(c Config) trace.Driver {
 	}
 	if c.Details()&trace.DriverCoreEvents != 0 {
 		c := c.WithSystem("core")
-		take := callGauges(c, "take", TagAddress, TagDataCenter)
-		release := callGauges(c, "release", TagAddress, TagDataCenter)
-		states := callGauges(c, "state", TagAddress, TagDataCenter, TagState)
-		invoke := callGauges(c, "invoke", TagAddress, TagDataCenter, TagMethod)
-		stream := callGauges(c, "stream", TagAddress, TagDataCenter, TagMethod, TagStage)
+		take := metrics(c, "take", TagAddress, TagDataCenter)
+		release := metrics(c, "release", TagAddress, TagDataCenter)
+		states := metrics(c, "state", TagAddress, TagDataCenter, TagState)
+		invoke := metrics(c, "invoke", TagAddress, TagDataCenter, TagMethod)
+		stream := metrics(c, "stream", TagAddress, TagDataCenter, TagMethod, TagStage)
 		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
 			address := Label{
 				Tag:   TagAddress,
@@ -182,7 +182,7 @@ func Driver(c Config) trace.Driver {
 		}
 	}
 	if c.Details()&trace.DriverDiscoveryEvents != 0 {
-		discovery := callGauges(c, "discovery")
+		discovery := metrics(c, "discovery")
 		t.OnDiscovery = func(info trace.DiscoveryStartInfo) func(trace.DiscoveryDoneInfo) {
 			start := discovery.start()
 			return func(info trace.DiscoveryDoneInfo) {
@@ -192,11 +192,11 @@ func Driver(c Config) trace.Driver {
 	}
 	if c.Details()&trace.DriverClusterEvents != 0 {
 		c := c.WithSystem("cluster")
-		get := callGauges(c, "get", TagAddress, TagDataCenter)
-		insert := callGauges(c, "insert", TagAddress, TagDataCenter)
-		remove := callGauges(c, "remove", TagAddress, TagDataCenter)
-		update := callGauges(c, "update", TagAddress, TagDataCenter)
-		pessimize := callGauges(c, "pessimize", TagAddress, TagDataCenter)
+		get := metrics(c, "get", TagAddress, TagDataCenter)
+		insert := metrics(c, "insert", TagAddress, TagDataCenter)
+		remove := metrics(c, "remove", TagAddress, TagDataCenter)
+		update := metrics(c, "update", TagAddress, TagDataCenter)
+		pessimize := metrics(c, "pessimize", TagAddress, TagDataCenter)
 		t.OnClusterGet = func(info trace.ClusterGetStartInfo) func(trace.ClusterGetDoneInfo) {
 			start := get.start(
 				Label{
@@ -282,7 +282,7 @@ func Driver(c Config) trace.Driver {
 	}
 	if c.Details()&trace.DriverCredentialsEvents != 0 {
 		c := c.WithSystem("credentials")
-		get := callGauges(c, "get")
+		get := metrics(c, "get")
 		t.OnGetCredentials = func(info trace.GetCredentialsStartInfo) func(trace.GetCredentialsDoneInfo) {
 			start := get.start()
 			return func(info trace.GetCredentialsDoneInfo) {
