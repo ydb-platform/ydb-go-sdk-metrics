@@ -8,8 +8,9 @@ func Table(c Config) trace.Table {
 	c = c.WithSystem("table")
 	t := trace.Table{}
 	if c.Details()&trace.TablePoolRetryEvents != 0 {
-		retry := metrics(c, "retry", TagIdempotent, TagStage)
-		t.OnPoolRetry = func(info trace.PoolRetryStartInfo) func(info trace.PoolRetryInternalInfo) func(trace.PoolRetryDoneInfo) {
+		do := metrics(c, "do", TagIdempotent, TagStage)
+		doTx := metrics(c, "do_tx", TagIdempotent, TagStage)
+		t.OnPoolDo = func(info trace.PoolDoStartInfo) func(info trace.PoolDoInternalInfo) func(trace.PoolDoDoneInfo) {
 			idempotent := Label{
 				Tag: TagIdempotent,
 				Value: func() string {
@@ -19,16 +20,43 @@ func Table(c Config) trace.Table {
 					return "false"
 				}(),
 			}
-			start := retry.start(idempotent, Label{
+			start := do.start(idempotent, Label{
 				Tag:   TagStage,
 				Value: "init",
 			})
-			return func(info trace.PoolRetryInternalInfo) func(trace.PoolRetryDoneInfo) {
+			return func(info trace.PoolDoInternalInfo) func(trace.PoolDoDoneInfo) {
 				start.sync(info.Error, idempotent, Label{
 					Tag:   TagStage,
 					Value: "intermediate",
 				})
-				return func(info trace.PoolRetryDoneInfo) {
+				return func(info trace.PoolDoDoneInfo) {
+					start.syncWithValue(info.Error, float64(info.Attempts), idempotent, Label{
+						Tag:   TagStage,
+						Value: "finish",
+					})
+				}
+			}
+		}
+		t.OnPoolDoTx = func(info trace.PoolDoTxStartInfo) func(info trace.PoolDoTxInternalInfo) func(trace.PoolDoTxDoneInfo) {
+			idempotent := Label{
+				Tag: TagIdempotent,
+				Value: func() string {
+					if info.Idempotent {
+						return "true"
+					}
+					return "false"
+				}(),
+			}
+			start := doTx.start(idempotent, Label{
+				Tag:   TagStage,
+				Value: "init",
+			})
+			return func(info trace.PoolDoTxInternalInfo) func(trace.PoolDoTxDoneInfo) {
+				start.sync(info.Error, idempotent, Label{
+					Tag:   TagStage,
+					Value: "intermediate",
+				})
+				return func(info trace.PoolDoTxDoneInfo) {
 					start.syncWithValue(info.Error, float64(info.Attempts), idempotent, Label{
 						Tag:   TagStage,
 						Value: "finish",
