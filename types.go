@@ -28,6 +28,7 @@ const (
 	TagError      = "error"
 	TagErrCode    = "errCode"
 	TagAddress    = "address"
+	TagID         = "ID"
 	TagNodeID     = "nodeID"
 	TagDataCenter = "destination"
 	TagState      = "state"

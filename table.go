@@ -4,13 +4,12 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
-func Table(c Config) trace.Table {
+func Table(c Config) (t trace.Table) {
 	c = c.WithSystem("table")
-	t := trace.Table{}
 	if c.Details()&trace.TablePoolRetryEvents != 0 {
 		do := metrics(c, "do", TagIdempotent, TagStage)
 		doTx := metrics(c, "do_tx", TagIdempotent, TagStage)
-		t.OnPoolDo = func(info trace.PoolDoStartInfo) func(info trace.PoolDoInternalInfo) func(trace.PoolDoDoneInfo) {
+		t.OnPoolDo = func(info trace.PoolDoStartInfo) func(info trace.PoolDoIntermediateInfo) func(trace.PoolDoDoneInfo) {
 			idempotent := Label{
 				Tag: TagIdempotent,
 				Value: func() string {
@@ -24,7 +23,7 @@ func Table(c Config) trace.Table {
 				Tag:   TagStage,
 				Value: "init",
 			})
-			return func(info trace.PoolDoInternalInfo) func(trace.PoolDoDoneInfo) {
+			return func(info trace.PoolDoIntermediateInfo) func(trace.PoolDoDoneInfo) {
 				start.sync(info.Error, idempotent, Label{
 					Tag:   TagStage,
 					Value: "intermediate",
@@ -37,7 +36,7 @@ func Table(c Config) trace.Table {
 				}
 			}
 		}
-		t.OnPoolDoTx = func(info trace.PoolDoTxStartInfo) func(info trace.PoolDoTxInternalInfo) func(trace.PoolDoTxDoneInfo) {
+		t.OnPoolDoTx = func(info trace.PoolDoTxStartInfo) func(info trace.PoolDoTxIntermediateInfo) func(trace.PoolDoTxDoneInfo) {
 			idempotent := Label{
 				Tag: TagIdempotent,
 				Value: func() string {
@@ -51,7 +50,7 @@ func Table(c Config) trace.Table {
 				Tag:   TagStage,
 				Value: "init",
 			})
-			return func(info trace.PoolDoTxInternalInfo) func(trace.PoolDoTxDoneInfo) {
+			return func(info trace.PoolDoTxIntermediateInfo) func(trace.PoolDoTxDoneInfo) {
 				start.sync(info.Error, idempotent, Label{
 					Tag:   TagStage,
 					Value: "intermediate",
@@ -118,7 +117,11 @@ func Table(c Config) trace.Table {
 				c := c.WithSystem("invoke")
 				prepare := metrics(c, "prepare", TagNodeID)
 				execute := metrics(c, "execute", TagNodeID)
-				t.OnSessionQueryPrepare = func(info trace.SessionQueryPrepareStartInfo) func(trace.PrepareDataQueryDoneInfo) {
+				t.OnSessionQueryPrepare = func(
+					info trace.PrepareDataQueryStartInfo,
+				) func(
+					trace.PrepareDataQueryDoneInfo,
+				) {
 					nodeID := Label{
 						Tag:   TagNodeID,
 						Value: nodeID(info.Session.ID()),
@@ -128,39 +131,87 @@ func Table(c Config) trace.Table {
 						start.sync(info.Error, nodeID)
 					}
 				}
-				t.OnSessionQueryExecute = func(info trace.ExecuteDataQueryStartInfo) func(trace.SessionQueryPrepareDoneInfo) {
+				t.OnSessionQueryExecute = func(
+					info trace.ExecuteDataQueryStartInfo,
+				) func(
+					trace.ExecuteDataQueryDoneInfo,
+				) {
 					nodeID := Label{
 						Tag:   TagNodeID,
 						Value: nodeID(info.Session.ID()),
 					}
 					start := execute.start(nodeID)
-					return func(info trace.SessionQueryPrepareDoneInfo) {
+					return func(info trace.ExecuteDataQueryDoneInfo) {
 						start.sync(info.Error, nodeID)
 					}
 				}
 			}
 			if c.Details()&trace.TableSessionQueryStreamEvents != 0 {
 				c := c.WithSystem("stream")
-				read := metrics(c, "read", TagNodeID)
-				execute := metrics(c, "execute", TagNodeID)
-				t.OnSessionQueryStreamExecute = func(info trace.SessionQueryStreamExecuteStartInfo) func(trace.SessionQueryStreamExecuteDoneInfo) {
+				read := metrics(c, "read", TagStage, TagNodeID)
+				execute := metrics(c, "execute", TagStage, TagNodeID)
+				t.OnSessionQueryStreamExecute = func(
+					info trace.SessionQueryStreamExecuteStartInfo,
+				) func(
+					trace.SessionQueryStreamExecuteIntermediateInfo,
+				) func(
+					trace.SessionQueryStreamExecuteDoneInfo,
+				) {
 					nodeID := Label{
 						Tag:   TagNodeID,
 						Value: nodeID(info.Session.ID()),
 					}
-					start := execute.start(nodeID)
-					return func(info trace.SessionQueryStreamExecuteDoneInfo) {
-						start.sync(info.Error, nodeID)
+					start := execute.start(nodeID, Label{
+						Tag:   TagStage,
+						Value: "init",
+					})
+					return func(
+						info trace.SessionQueryStreamExecuteIntermediateInfo,
+					) func(
+						trace.SessionQueryStreamExecuteDoneInfo,
+					) {
+						start.sync(info.Error, nodeID, Label{
+							Tag:   TagStage,
+							Value: "intermediate",
+						})
+						return func(info trace.SessionQueryStreamExecuteDoneInfo) {
+							start.sync(info.Error, nodeID, Label{
+								Tag:   TagStage,
+								Value: "finish",
+							})
+						}
 					}
 				}
-				t.OnSessionQueryStreamRead = func(info trace.SessionQueryStreamReadStartInfo) func(trace.SessionQueryStreamReadDoneInfo) {
+				t.OnSessionQueryStreamRead = func(
+					info trace.SessionQueryStreamReadStartInfo,
+				) func(
+					trace.SessionQueryStreamReadIntermediateInfo,
+				) func(
+					trace.SessionQueryStreamReadDoneInfo,
+				) {
 					nodeID := Label{
 						Tag:   TagNodeID,
 						Value: nodeID(info.Session.ID()),
 					}
-					start := read.start(nodeID)
-					return func(info trace.SessionQueryStreamReadDoneInfo) {
-						start.sync(info.Error, nodeID)
+					start := read.start(nodeID, Label{
+						Tag:   TagStage,
+						Value: "init",
+					})
+					return func(
+						info trace.SessionQueryStreamReadIntermediateInfo,
+					) func(
+						trace.SessionQueryStreamReadDoneInfo,
+					) {
+						start.sync(info.Error, nodeID, Label{
+							Tag:   TagStage,
+							Value: "intermediate",
+						})
+						return func(info trace.SessionQueryStreamReadDoneInfo) {
+							start.sync(info.Error, nodeID, Label{
+								Tag:   TagStage,
+								Value: "finish",
+							})
+						}
 					}
 				}
 			}

@@ -8,7 +8,7 @@ import (
 )
 
 // Driver makes Driver with metrics publishing
-func Driver(c Config) trace.Driver {
+func Driver(c Config) (t trace.Driver) {
 	if c.Details()&trace.DriverSystemEvents != 0 {
 		c := c.WithSystem("system")
 		goroutines := c.GaugeVec("goroutines", TagVersion)
@@ -27,7 +27,6 @@ func Driver(c Config) trace.Driver {
 		}()
 	}
 	c = c.WithSystem("driver")
-	t := trace.Driver{}
 	if c.Details()&trace.DriverNetEvents != 0 {
 		c := c.WithSystem("net")
 		read := metrics(c, "read", TagAddress)
@@ -178,15 +177,6 @@ func Driver(c Config) trace.Driver {
 						Value: "finish",
 					})
 				}
-			}
-		}
-	}
-	if c.Details()&trace.DriverDiscoveryEvents != 0 {
-		discovery := metrics(c, "discovery")
-		t.OnDiscovery = func(info trace.DiscoveryStartInfo) func(trace.DiscoveryDoneInfo) {
-			start := discovery.start()
-			return func(info trace.DiscoveryDoneInfo) {
-				start.syncWithValue(info.Error, float64(len(info.Endpoints)))
 			}
 		}
 	}
