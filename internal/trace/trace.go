@@ -22,6 +22,7 @@ var (
 
 type Trace interface {
 	Sync(e error, lbls ...labels.Label) (callLabels []labels.Label, errLabels []labels.Label)
+	SyncValue(v float64, lbls ...labels.Label)
 	SyncWithValue(err error, v float64, lbls ...labels.Label)
 }
 
@@ -45,9 +46,13 @@ func New(s Scope) Trace {
 	}
 }
 
+func (t *callTrace) SyncValue(v float64, lbls ...labels.Label) {
+	t.scope.RecordValue(labels.KeyValue(append([]labels.Label{Version}, lbls...)...), v)
+}
+
 func (t *callTrace) SyncWithValue(err error, v float64, lbls ...labels.Label) {
 	t.syncWithSuccess(err == nil, lbls...)
-	t.scope.RecordValue(labels.KeyValue(append([]labels.Label{Version}, lbls...)...), v)
+	t.SyncValue(v, lbls...)
 }
 
 func (t *callTrace) syncWithSuccess(ok bool, lbls ...labels.Label) (callLabels []labels.Label) {

@@ -283,8 +283,8 @@ func Table(c config2.Config) (t trace.Table) {
 				startMin := min.Start()
 				startMax := max.Start()
 				return func(info trace.PoolInitDoneInfo) {
-					startMin.SyncWithValue(nil, float64(info.KeepAliveMinSize))
-					startMax.SyncWithValue(nil, float64(info.Limit))
+					startMin.SyncValue(float64(info.KeepAliveMinSize))
+					startMax.SyncValue(float64(info.Limit))
 				}
 			}
 			t.OnPoolClose = func(info trace.PoolCloseStartInfo) func(trace.PoolCloseDoneInfo) {
