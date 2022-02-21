@@ -1,9 +1,5 @@
 package registry
 
-import (
-	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
-)
-
 type Registry interface {
 	// GaugeVec returns GaugeVec by name, subsystem and labels
 	// If gauge by args already created - return gauge from cache
@@ -18,17 +14,5 @@ type Registry interface {
 	// HistogramVec returns HistogramVec by name, subsystem and labels
 	// If histogram by args already created - return histogram from cache
 	// If histogram by args nothing - create and return newest histogram
-	HistogramVec(name string, labelNames ...string) HistogramVec
-}
-
-type Config interface {
-	Registry
-
-	// Details returns bitmask for customize details of NewScope
-	// If zero - use full set of driver NewScope
-	Details() trace.Details
-
-	// WithSystem returns new Config with subsystem scope
-	// Separator for split scopes of NewScope provided Config implementation
-	WithSystem(subsystem string) Config
+	HistogramVec(name string, buckets []float64, labelNames ...string) HistogramVec
 }

@@ -13,13 +13,19 @@ type Config interface {
 	HasCalls() bool
 	HasError() bool
 	ValueType() ValueType
+	ValueBuckets() []float64
 }
 
 type config struct {
-	withLatency bool
-	withCalls   bool
-	withError   bool
-	withValue   ValueType
+	withLatency  bool
+	withCalls    bool
+	withError    bool
+	withValue    ValueType
+	valueBuckets []float64
+}
+
+func (c *config) ValueBuckets() []float64 {
+	return c.valueBuckets
 }
 
 func (c *config) HasLatency() bool {
@@ -64,12 +70,19 @@ func WithValue(valueType ValueType) option {
 	}
 }
 
+func WithValueBuckets(buckets []float64) option {
+	return func(o *config) {
+		o.valueBuckets = buckets
+	}
+}
+
 func New(opts ...option) Config {
 	h := &config{
-		withLatency: true,
-		withCalls:   true,
-		withError:   true,
-		withValue:   ValueTypeNone,
+		withLatency:  true,
+		withCalls:    true,
+		withError:    true,
+		withValue:    ValueTypeNone,
+		valueBuckets: make([]float64, 0),
 	}
 	for _, o := range opts {
 		o(h)

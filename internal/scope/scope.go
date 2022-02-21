@@ -77,7 +77,7 @@ func New(c registry.Config, scope string, cfg config.Config, tags ...string) *ca
 	case config.ValueTypeGauge:
 		s.value = c.GaugeVec("value", append([]string{labels.TagVersion}, tags...)...)
 	case config.ValueTypeHistogram:
-		s.value = c.HistogramVec("value", append([]string{labels.TagVersion}, tags...)...)
+		s.value = c.HistogramVec("value", cfg.ValueBuckets(), append([]string{labels.TagVersion}, tags...)...)
 	default:
 		// nop
 	}
