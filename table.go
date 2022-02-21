@@ -20,8 +20,18 @@ func nodeID(sessionID string) string {
 func Table(c config2.Config) (t trace.Table) {
 	c = c.WithSystem("table")
 	if c.Details()&trace.TablePoolRetryEvents != 0 {
-		do := scope.New(c, "do", config.New(config.WithValue(config.ValueTypeGauge)), labels.TagIdempotent, labels.TagStage)
-		doTx := scope.New(c, "do_tx", config.New(config.WithValue(config.ValueTypeGauge)), labels.TagIdempotent, labels.TagStage)
+		do := scope.New(c, "do", config.New(
+			config.WithValue(config.ValueTypeHistogram),
+			config.WithValueBuckets([]float64{
+				1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
+			}),
+		), labels.TagIdempotent, labels.TagStage)
+		doTx := scope.New(c, "do_tx", config.New(
+			config.WithValue(config.ValueTypeHistogram),
+			config.WithValueBuckets([]float64{
+				1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
+			}),
+		), labels.TagIdempotent, labels.TagStage)
 		t.OnPoolDo = func(info trace.PoolDoStartInfo) func(info trace.PoolDoIntermediateInfo) func(trace.PoolDoDoneInfo) {
 			idempotent := labels.Label{
 				Tag: labels.TagIdempotent,
