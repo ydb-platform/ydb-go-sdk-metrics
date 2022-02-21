@@ -29,34 +29,33 @@ func (s *callScope) RecordValue(tags map[string]string, value float64) {
 }
 
 func (s *callScope) Start(lbls ...labels.Label) trace.Trace {
-	s.calls.With(labels.KeyValue(
-		append([]labels.Label{trace.Version, {
-			Tag:   labels.TagSuccess,
-			Value: "wip",
-		}}, lbls...)...,
-	)).Add(1)
+	if s.config.HasCalls() {
+		s.calls.With(labels.KeyValue(
+			append([]labels.Label{trace.Version, {
+				Tag:   labels.TagSuccess,
+				Value: "wip",
+			}}, lbls...)...,
+		)).Add(1)
+	}
 	return trace.New(s)
 }
 
 func (s *callScope) AddCall(tags map[string]string, delta int) {
-	if s.calls == nil {
-		return
+	if s.config.HasCalls() {
+		s.calls.With(tags).Add(float64(delta))
 	}
-	s.calls.With(tags).Add(float64(delta))
 }
 
 func (s *callScope) AddError(tags map[string]string) {
-	if s.errs == nil {
-		return
+	if s.config.HasError() {
+		s.errs.With(tags).Add(1)
 	}
-	s.errs.With(tags).Add(1)
 }
 
 func (s *callScope) RecordLatency(tags map[string]string, latency time.Duration) {
-	if s.latency == nil {
-		return
+	if s.config.HasLatency() {
+		s.latency.With(tags).Record(latency)
 	}
-	s.latency.With(tags).Record(latency)
 }
 
 func New(c registry.Config, scope string, cfg config.Config, tags ...string) *callScope {
