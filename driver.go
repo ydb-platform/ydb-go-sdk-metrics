@@ -167,11 +167,30 @@ func Driver(c registry.Config) (t trace.Driver) {
 	}
 	if c.Details()&trace.DriverClusterEvents != 0 {
 		c := c.WithSystem("cluster")
+		init := scope.New(c, "init", config.New(
+			config.WithoutCalls(),
+			config.WithoutError(),
+		))
+		close := scope.New(c, "init", config.New(
+			config.WithoutCalls(),
+		))
 		get := scope.New(c, "get", config.New(), labels.TagAddress, labels.TagDataCenter)
 		insert := scope.New(c, "insert", config.New(), labels.TagAddress, labels.TagDataCenter)
 		remove := scope.New(c, "remove", config.New(), labels.TagAddress, labels.TagDataCenter)
 		update := scope.New(c, "update", config.New(), labels.TagAddress, labels.TagDataCenter)
 		pessimize := scope.New(c, "pessimize", config.New(), labels.TagAddress, labels.TagDataCenter)
+		t.OnClusterInit = func(info trace.ClusterInitStartInfo) func(trace.ClusterInitDoneInfo) {
+			start := init.Start()
+			return func(info trace.ClusterInitDoneInfo) {
+				start.Sync(nil)
+			}
+		}
+		t.OnClusterClose = func(info trace.ClusterCloseStartInfo) func(trace.ClusterCloseDoneInfo) {
+			start := close.Start()
+			return func(info trace.ClusterCloseDoneInfo) {
+				start.Sync(info.Error)
+			}
+		}
 		t.OnClusterGet = func(info trace.ClusterGetStartInfo) func(trace.ClusterGetDoneInfo) {
 			start := get.Start(
 				labels.Label{
