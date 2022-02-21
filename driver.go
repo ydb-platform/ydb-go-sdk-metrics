@@ -1,179 +1,164 @@
 package metrics
 
 import (
-	"runtime"
-	"time"
-
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/labels"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope/config"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/str"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/registry"
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
-// Driver makes Driver with metrics publishing
-func Driver(c Config) (t trace.Driver) {
-	if c.Details()&trace.DriverSystemEvents != 0 {
-		c := c.WithSystem("system")
-		goroutines := c.GaugeVec("goroutines", TagVersion)
-		memory := c.GaugeVec("memory", TagVersion)
-		uptime := c.GaugeVec("uptime", TagVersion)
-		go func() {
-			var stats runtime.MemStats
-			start := time.Now()
-			for {
-				time.Sleep(time.Second)
-				uptime.With(labelsToKeyValue(version)).Set(time.Since(start).Seconds())
-				goroutines.With(labelsToKeyValue(version)).Set(float64(runtime.NumGoroutine()))
-				runtime.ReadMemStats(&stats)
-				memory.With(labelsToKeyValue(version)).Set(float64(stats.Alloc))
-			}
-		}()
-	}
+// Driver makes Driver with New publishing
+func Driver(c registry.Config) (t trace.Driver) {
 	c = c.WithSystem("driver")
 	if c.Details()&trace.DriverNetEvents != 0 {
 		c := c.WithSystem("net")
-		read := metrics(c, "read", TagAddress)
-		write := metrics(c, "write", TagAddress)
-		dial := metrics(c, "dial", TagAddress)
-		close := metrics(c, "close", TagAddress)
+		read := scope.New(c, "read", config.New(), labels.TagAddress)
+		write := scope.New(c, "write", config.New(), labels.TagAddress)
+		dial := scope.New(c, "dial", config.New(), labels.TagAddress)
+		close := scope.New(c, "close", config.New(), labels.TagAddress)
 		t.OnNetRead = func(info trace.NetReadStartInfo) func(trace.NetReadDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
-			start := read.start(address)
+			start := read.Start(address)
 			return func(info trace.NetReadDoneInfo) {
-				start.syncWithValue(info.Error, float64(info.Received), address)
+				start.SyncWithValue(info.Error, float64(info.Received), address)
 			}
 		}
 		t.OnNetWrite = func(info trace.NetWriteStartInfo) func(trace.NetWriteDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
-			start := write.start(address)
+			start := write.Start(address)
 			return func(info trace.NetWriteDoneInfo) {
-				start.syncWithValue(info.Error, float64(info.Sent), address)
+				start.SyncWithValue(info.Error, float64(info.Sent), address)
 			}
 		}
 		t.OnNetDial = func(info trace.NetDialStartInfo) func(trace.NetDialDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
-			start := dial.start(address)
+			start := dial.Start(address)
 			return func(info trace.NetDialDoneInfo) {
-				lables, _ := start.sync(info.Error, address)
-				// publish empty close call metric for register metrics on metrics storage
-				close.calls.With(labelsToKeyValue(lables...)).Add(0)
+				lables, _ := start.Sync(info.Error, address)
+				// publish empty close call metric for register New on New storage
+				close.AddCall(labels.KeyValue(lables...), 0)
 			}
 		}
 		t.OnNetClose = func(info trace.NetCloseStartInfo) func(trace.NetCloseDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
-			start := close.start(address)
+			start := close.Start(address)
 			return func(info trace.NetCloseDoneInfo) {
-				start.sync(info.Error, address)
+				start.Sync(info.Error, address)
 			}
 		}
 	}
 	if c.Details()&trace.DriverCoreEvents != 0 {
 		c := c.WithSystem("core")
-		take := metrics(c, "take", TagAddress, TagDataCenter)
-		release := metrics(c, "release", TagAddress, TagDataCenter)
-		states := metrics(c, "state", TagAddress, TagDataCenter, TagState)
-		invoke := metrics(c, "invoke", TagAddress, TagDataCenter, TagMethod)
-		stream := metrics(c, "stream", TagAddress, TagDataCenter, TagMethod, TagStage)
+		take := scope.New(c, "take", config.New(), labels.TagAddress, labels.TagDataCenter)
+		release := scope.New(c, "release", config.New(), labels.TagAddress, labels.TagDataCenter)
+		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagState)
+		invoke := scope.New(c, "invoke", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod)
+		stream := scope.New(c, "stream", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod, labels.TagStage)
 		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := take.start(address, dataCenter)
+			start := take.Start(address, dataCenter)
 			return func(info trace.ConnTakeDoneInfo) {
-				start.sync(info.Error, address, dataCenter)
+				start.Sync(info.Error, address, dataCenter)
 			}
 		}
 		t.OnConnRelease = func(info trace.ConnReleaseStartInfo) func(trace.ConnReleaseDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := release.start(address, dataCenter)
+			start := release.Start(address, dataCenter)
 			return func(info trace.ConnReleaseDoneInfo) {
-				start.sync(nil, address, dataCenter)
+				start.Sync(nil, address, dataCenter)
 			}
 		}
 		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := states.start(address, dataCenter, Label{
-				Tag:   TagState,
+			start := states.Start(address, dataCenter, labels.Label{
+				Tag:   labels.TagState,
 				Value: info.State.String(),
 			})
 			return func(info trace.ConnStateChangeDoneInfo) {
-				start.sync(nil, address, dataCenter, Label{
-					Tag:   TagState,
+				start.Sync(nil, address, dataCenter, labels.Label{
+					Tag:   labels.TagState,
 					Value: info.State.String(),
 				})
 			}
 		}
 		t.OnConnInvoke = func(info trace.ConnInvokeStartInfo) func(trace.ConnInvokeDoneInfo) {
-			method := Label{
-				Tag:   TagMethod,
+			method := labels.Label{
+				Tag:   labels.TagMethod,
 				Value: string(info.Method),
 			}
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := invoke.start(address, dataCenter, method)
+			start := invoke.Start(address, dataCenter, method)
 			return func(info trace.ConnInvokeDoneInfo) {
-				start.sync(info.Error, address, dataCenter, method)
+				start.Sync(info.Error, address, dataCenter, method)
 			}
 		}
 		t.OnConnNewStream = func(info trace.ConnNewStreamStartInfo) func(trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
-			method := Label{
-				Tag:   TagMethod,
+			method := labels.Label{
+				Tag:   labels.TagMethod,
 				Value: string(info.Method),
 			}
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := stream.start(address, dataCenter, method, Label{
-				Tag:   TagStage,
+			start := stream.Start(address, dataCenter, method, labels.Label{
+				Tag:   labels.TagStage,
 				Value: "init",
 			})
 			return func(info trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
-				start.sync(info.Error, address, dataCenter, method, Label{
-					Tag:   TagStage,
+				start.Sync(info.Error, address, dataCenter, method, labels.Label{
+					Tag:   labels.TagStage,
 					Value: "intermediate",
 				})
 				return func(info trace.ConnNewStreamDoneInfo) {
-					start.sync(info.Error, address, dataCenter, method, Label{
-						Tag:   TagStage,
+					start.Sync(info.Error, address, dataCenter, method, labels.Label{
+						Tag:   labels.TagStage,
 						Value: "finish",
 					})
 				}
@@ -182,101 +167,101 @@ func Driver(c Config) (t trace.Driver) {
 	}
 	if c.Details()&trace.DriverClusterEvents != 0 {
 		c := c.WithSystem("cluster")
-		get := metrics(c, "get", TagAddress, TagDataCenter)
-		insert := metrics(c, "insert", TagAddress, TagDataCenter)
-		remove := metrics(c, "remove", TagAddress, TagDataCenter)
-		update := metrics(c, "update", TagAddress, TagDataCenter)
-		pessimize := metrics(c, "pessimize", TagAddress, TagDataCenter)
+		get := scope.New(c, "get", config.New(), labels.TagAddress, labels.TagDataCenter)
+		insert := scope.New(c, "insert", config.New(), labels.TagAddress, labels.TagDataCenter)
+		remove := scope.New(c, "remove", config.New(), labels.TagAddress, labels.TagDataCenter)
+		update := scope.New(c, "update", config.New(), labels.TagAddress, labels.TagDataCenter)
+		pessimize := scope.New(c, "pessimize", config.New(), labels.TagAddress, labels.TagDataCenter)
 		t.OnClusterGet = func(info trace.ClusterGetStartInfo) func(trace.ClusterGetDoneInfo) {
-			start := get.start(
-				Label{
-					Tag:   TagAddress,
+			start := get.Start(
+				labels.Label{
+					Tag:   labels.TagAddress,
 					Value: "wip",
 				},
-				Label{
-					Tag:   TagDataCenter,
+				labels.Label{
+					Tag:   labels.TagDataCenter,
 					Value: "wip",
 				},
 			)
 			return func(info trace.ClusterGetDoneInfo) {
-				start.sync(
+				start.Sync(
 					info.Error,
-					Label{
-						Tag:   TagAddress,
+					labels.Label{
+						Tag:   labels.TagAddress,
 						Value: info.Endpoint.Address(),
 					},
-					Label{
-						Tag:   TagDataCenter,
-						Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+					labels.Label{
+						Tag:   labels.TagDataCenter,
+						Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 					},
 				)
 			}
 		}
 		t.OnClusterInsert = func(info trace.ClusterInsertStartInfo) func(trace.ClusterInsertDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := insert.start(address, dataCenter)
+			start := insert.Start(address, dataCenter)
 			return func(info trace.ClusterInsertDoneInfo) {
-				start.syncWithValue(nil, float64(info.State.Code()), address, dataCenter)
+				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
 			}
 		}
 		t.OnClusterRemove = func(info trace.ClusterRemoveStartInfo) func(trace.ClusterRemoveDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := remove.start(address, dataCenter)
+			start := remove.Start(address, dataCenter)
 			return func(info trace.ClusterRemoveDoneInfo) {
-				start.syncWithValue(nil, float64(info.State.Code()), address, dataCenter)
+				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
 			}
 		}
 		t.OnClusterUpdate = func(info trace.ClusterUpdateStartInfo) func(trace.ClusterUpdateDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := update.start(address, dataCenter)
+			start := update.Start(address, dataCenter)
 			return func(info trace.ClusterUpdateDoneInfo) {
-				start.syncWithValue(nil, float64(info.State.Code()), address, dataCenter)
+				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
 			}
 		}
 		t.OnPessimizeNode = func(info trace.PessimizeNodeStartInfo) func(trace.PessimizeNodeDoneInfo) {
-			address := Label{
-				Tag:   TagAddress,
+			address := labels.Label{
+				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := Label{
-				Tag:   TagDataCenter,
-				Value: ifStr(info.Endpoint.LocalDC(), "local", "remote"),
+			dataCenter := labels.Label{
+				Tag:   labels.TagDataCenter,
+				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
-			start := pessimize.start(address, dataCenter)
+			start := pessimize.Start(address, dataCenter)
 			return func(info trace.PessimizeNodeDoneInfo) {
-				// sync cause instead pessimize result error
-				start.sync(nil, address, dataCenter)
+				// Sync cause instead pessimize result error
+				start.Sync(nil, address, dataCenter)
 			}
 		}
 	}
 	if c.Details()&trace.DriverCredentialsEvents != 0 {
 		c := c.WithSystem("credentials")
-		get := metrics(c, "get")
+		get := scope.New(c, "get", config.New())
 		t.OnGetCredentials = func(info trace.GetCredentialsStartInfo) func(trace.GetCredentialsDoneInfo) {
-			start := get.start()
+			start := get.Start()
 			return func(info trace.GetCredentialsDoneInfo) {
-				start.syncWithSuccess(info.TokenOk)
+				start.Sync(info.Error)
 			}
 		}
 	}

@@ -44,7 +44,7 @@ func (g *gauge) Value() float64 {
     return g.v	
 }
 
-// define custom config
+// define custom registry
 type config struct {
     gauges []gauge
     m      sync.Mutex

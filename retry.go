@@ -2,12 +2,22 @@ package metrics
 
 import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
+
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/labels"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope/config"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/registry"
 )
 
-// Retry makes table.RetryTrace with metrics publishing
-func Retry(c Config) (t trace.Retry) {
+// Retry makes table.RetryTrace with New publishing
+func Retry(c registry.Config) (t trace.Retry) {
 	if c.Details()&trace.RetryEvents != 0 {
-		retry := metrics(c, "retry", TagIdempotent, TagStage, TagID)
+		retry := scope.New(c, "retry",
+			config.New(
+				config.WithValue(config.ValueTypeGauge),
+			),
+			labels.TagIdempotent, labels.TagStage, labels.TagID,
+		)
 		t.OnRetry = func(
 			info trace.RetryLoopStartInfo,
 		) func(
@@ -15,8 +25,8 @@ func Retry(c Config) (t trace.Retry) {
 		) func(
 			trace.RetryLoopDoneInfo,
 		) {
-			idempotent := Label{
-				Tag: TagIdempotent,
+			idempotent := labels.Label{
+				Tag: labels.TagIdempotent,
 				Value: func() string {
 					if info.Idempotent {
 						return "true"
@@ -24,12 +34,12 @@ func Retry(c Config) (t trace.Retry) {
 					return "false"
 				}(),
 			}
-			id := Label{
-				Tag:   TagID,
+			id := labels.Label{
+				Tag:   labels.TagID,
 				Value: info.ID,
 			}
-			start := retry.start(idempotent, id, Label{
-				Tag:   TagStage,
+			start := retry.Start(idempotent, id, labels.Label{
+				Tag:   labels.TagStage,
 				Value: "init",
 			})
 			return func(
@@ -37,13 +47,13 @@ func Retry(c Config) (t trace.Retry) {
 			) func(
 				trace.RetryLoopDoneInfo,
 			) {
-				start.sync(info.Error, idempotent, id, Label{
-					Tag:   TagStage,
+				start.Sync(info.Error, idempotent, id, labels.Label{
+					Tag:   labels.TagStage,
 					Value: "intermediate",
 				})
 				return func(info trace.RetryLoopDoneInfo) {
-					start.syncWithValue(info.Error, float64(info.Attempts), idempotent, id, Label{
-						Tag:   TagStage,
+					start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, id, labels.Label{
+						Tag:   labels.TagStage,
 						Value: "finish",
 					})
 				}

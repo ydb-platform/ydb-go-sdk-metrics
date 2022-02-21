@@ -1,10 +1,11 @@
 package metrics
 
 import (
+	"github.com/ydb-platform/ydb-go-sdk-metrics/registry"
 	"github.com/ydb-platform/ydb-go-sdk/v3"
 )
 
-func WithTraces(c Config) ydb.Option {
+func WithTraces(c registry.Config) ydb.Option {
 	return ydb.MergeOptions(
 		ydb.WithTraceDriver(Driver(c)),
 		ydb.WithTraceTable(Table(c)),
