@@ -171,7 +171,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 			config.WithoutCalls(),
 			config.WithoutError(),
 		))
-		close := scope.New(c, "init", config.New(
+		close := scope.New(c, "close", config.New(
 			config.WithoutCalls(),
 		))
 		get := scope.New(c, "get", config.New(), labels.TagAddress, labels.TagDataCenter)
