@@ -111,7 +111,7 @@ func main() {
     db, err := ydb.New(
         context.Background(),
 		ydb.MustConnectionString(connection),
-		ydb.WithTraceDriver(metrics.Driver(registry))
+		metrics.WithTraces(registry)
 	)
     // work with db
 }
