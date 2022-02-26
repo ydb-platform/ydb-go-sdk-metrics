@@ -92,7 +92,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			usages.Start(address).SyncValue(float64(info.Usages))
+			usages.Start(address).SyncValue(float64(info.Usages), address)
 		}
 		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
 			address := labels.Label{
