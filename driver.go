@@ -64,7 +64,12 @@ func Driver(c registry.Config) (t trace.Driver) {
 	if c.Details()&trace.DriverCoreEvents != 0 {
 		c := c.WithSystem("core")
 		take := scope.New(c, "take", config.New(), labels.TagAddress, labels.TagDataCenter)
-		release := scope.New(c, "release", config.New(), labels.TagAddress, labels.TagDataCenter)
+		usages := scope.New(c, "usages", config.New(
+			config.WithoutCalls(),
+			config.WithoutLatency(),
+			config.WithoutError(),
+			config.WithValue(config.ValueTypeGauge),
+		), labels.TagAddress)
 		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagState)
 		invoke := scope.New(c, "invoke", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod)
 		stream := scope.New(c, "stream", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod, labels.TagStage)
@@ -82,19 +87,12 @@ func Driver(c registry.Config) (t trace.Driver) {
 				start.Sync(info.Error, address, dataCenter)
 			}
 		}
-		t.OnConnRelease = func(info trace.ConnReleaseStartInfo) func(trace.ConnReleaseDoneInfo) {
+		t.OnConnUsagesChange = func(info trace.ConnUsagesChangeInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := release.Start(address, dataCenter)
-			return func(info trace.ConnReleaseDoneInfo) {
-				start.Sync(nil, address, dataCenter)
-			}
+			usages.Start(address).SyncValue(float64(info.Usages))
 		}
 		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
 			address := labels.Label{
