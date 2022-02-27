@@ -21,7 +21,7 @@ var (
 )
 
 type Trace interface {
-	Sync(e error, lbls ...labels.Label) (callLabels []labels.Label, errLabels []labels.Label)
+	Sync(e error, lbls ...labels.Label)
 	SyncValue(v float64, lbls ...labels.Label)
 	SyncWithValue(err error, v float64, lbls ...labels.Label)
 }
@@ -46,13 +46,18 @@ func New(s Scope) Trace {
 	}
 }
 
-func (t *callTrace) SyncValue(v float64, lbls ...labels.Label) {
+func (t *callTrace) syncValue(v float64, lbls ...labels.Label) {
 	t.scope.RecordValue(labels.KeyValue(append([]labels.Label{Version}, lbls...)...), v)
 }
 
+func (t *callTrace) SyncValue(v float64, lbls ...labels.Label) {
+	t.syncValue(v, lbls...)
+}
+
 func (t *callTrace) SyncWithValue(err error, v float64, lbls ...labels.Label) {
+	t.syncError(err, lbls...)
 	t.syncWithSuccess(err == nil, lbls...)
-	t.SyncValue(v, lbls...)
+	t.syncValue(v, lbls...)
 }
 
 func (t *callTrace) syncWithSuccess(ok bool, lbls ...labels.Label) (callLabels []labels.Label) {
@@ -65,11 +70,13 @@ func (t *callTrace) syncWithSuccess(ok bool, lbls ...labels.Label) (callLabels [
 	return append([]labels.Label{Version, success}, lbls...)
 }
 
-func (t *callTrace) Sync(e error, lbls ...labels.Label) (callLabels []labels.Label, errLabels []labels.Label) {
-	callLabels = t.syncWithSuccess(e == nil, lbls...)
-	if e != nil {
-		errLabels = labels.Err(e, append([]labels.Label{Version}, lbls...)...)
-		t.scope.AddError(labels.KeyValue(errLabels...))
+func (t *callTrace) syncError(err error, lbls ...labels.Label) {
+	if err != nil {
+		t.scope.AddError(labels.KeyValue(labels.Err(err, append([]labels.Label{Version}, lbls...)...)...))
 	}
-	return
+}
+
+func (t *callTrace) Sync(err error, lbls ...labels.Label) {
+	t.syncError(err, lbls...)
+	t.syncWithSuccess(err == nil, lbls...)
 }

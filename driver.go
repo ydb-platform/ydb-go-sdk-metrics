@@ -45,9 +45,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 			}
 			start := dial.Start(address)
 			return func(info trace.NetDialDoneInfo) {
-				lables, _ := start.Sync(info.Error, address)
-				// publish empty close call metric for register New on New storage
-				close.AddCall(labels.KeyValue(lables...), 0)
+				start.Sync(info.Error, address)
 			}
 		}
 		t.OnNetClose = func(info trace.NetCloseStartInfo) func(trace.NetCloseDoneInfo) {

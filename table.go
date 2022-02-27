@@ -108,9 +108,7 @@ func Table(c config2.Config) (t trace.Table) {
 							return ""
 						}(),
 					}
-					lables, _ := start.Sync(info.Error, nodeID)
-					// publish empty delete call metric for register New on New storage
-					delete.AddCall(labels.KeyValue(lables...), 0)
+					start.Sync(info.Error, nodeID)
 				}
 			}
 			t.OnSessionDelete = func(info trace.SessionDeleteStartInfo) func(trace.SessionDeleteDoneInfo) {
@@ -314,9 +312,7 @@ func Table(c config2.Config) (t trace.Table) {
 			t.OnPoolSessionNew = func(info trace.PoolSessionNewStartInfo) func(trace.PoolSessionNewDoneInfo) {
 				start := new.Start()
 				return func(info trace.PoolSessionNewDoneInfo) {
-					lables, _ := start.Sync(info.Error)
-					// publish empty close call metric for register New on New storage
-					close.AddCall(labels.KeyValue(lables...), 0)
+					start.Sync(info.Error)
 				}
 			}
 			t.OnPoolSessionClose = func(info trace.PoolSessionCloseStartInfo) func(trace.PoolSessionCloseDoneInfo) {
