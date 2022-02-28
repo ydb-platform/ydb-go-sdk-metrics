@@ -287,6 +287,12 @@ func Table(c config2.Config) (t trace.Table) {
 				config.WithoutLatency(),
 				config.WithValue(config.ValueTypeGauge)),
 			)
+			size := scope.New(c, "size", config.New(
+				config.WithoutCalls(),
+				config.WithoutError(),
+				config.WithoutLatency(),
+				config.WithValue(config.ValueTypeGauge),
+			))
 			t.OnPoolInit = func(info trace.PoolInitStartInfo) func(trace.PoolInitDoneInfo) {
 				startMin := min.Start()
 				startMax := max.Start()
@@ -303,12 +309,14 @@ func Table(c config2.Config) (t trace.Table) {
 					startMax.SyncWithValue(info.Error, 0)
 				}
 			}
+			t.OnPoolStateChange = func(info trace.PooStateChangeInfo) {
+				size.Start().SyncValue(float64(info.Size))
+			}
 		}
 		if c.Details()&trace.TablePoolSessionLifeCycleEvents != 0 {
 			c := c.WithSystem("session")
 			new := scope.New(c, "new", config.New())
 			close := scope.New(c, "close", config.New())
-			size := scope.New(c, "size", config.New())
 			t.OnPoolSessionNew = func(info trace.PoolSessionNewStartInfo) func(trace.PoolSessionNewDoneInfo) {
 				start := new.Start()
 				return func(info trace.PoolSessionNewDoneInfo) {
@@ -320,9 +328,6 @@ func Table(c config2.Config) (t trace.Table) {
 				return func(info trace.PoolSessionCloseDoneInfo) {
 					start.Sync(nil)
 				}
-			}
-			t.OnPoolStateChange = func(info trace.PooStateChangeInfo) {
-				size.RecordValue(nil, float64(info.Size))
 			}
 		}
 		if c.Details()&trace.TablePoolAPIEvents != 0 {

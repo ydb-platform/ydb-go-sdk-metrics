@@ -9,13 +9,37 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
+var (
+	bytesBuckets = []float64{
+		10,
+		20,
+		50,
+		100,
+		200,
+		500,
+		1000,
+		2000,
+		5000,
+		10000,
+		20000,
+		50000,
+		100000,
+	}
+)
+
 // Driver makes Driver with New publishing
 func Driver(c registry.Config) (t trace.Driver) {
 	c = c.WithSystem("driver")
 	if c.Details()&trace.DriverNetEvents != 0 {
 		c := c.WithSystem("net")
-		read := scope.New(c, "read", config.New(), labels.TagAddress)
-		write := scope.New(c, "write", config.New(), labels.TagAddress)
+		read := scope.New(c, "read", config.New(
+			config.WithValue(config.ValueTypeHistogram),
+			config.WithValueBuckets(bytesBuckets),
+		), labels.TagAddress)
+		write := scope.New(c, "write", config.New(
+			config.WithValue(config.ValueTypeHistogram),
+			config.WithValueBuckets(bytesBuckets),
+		), labels.TagAddress)
 		dial := scope.New(c, "dial", config.New(), labels.TagAddress)
 		close := scope.New(c, "close", config.New(), labels.TagAddress)
 		t.OnNetRead = func(info trace.NetReadStartInfo) func(trace.NetReadDoneInfo) {
