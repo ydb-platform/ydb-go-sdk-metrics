@@ -93,6 +93,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 			config.WithValue(config.ValueTypeGauge),
 		), labels.TagAddress)
 		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagState)
+		repeater := scope.New(c, "repeater", config.New(), labels.TagEvent, labels.TagName)
 		invoke := scope.New(c, "invoke", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod)
 		stream := scope.New(c, "stream", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod, labels.TagStage)
 		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
@@ -134,6 +135,20 @@ func Driver(c registry.Config) (t trace.Driver) {
 					Tag:   labels.TagState,
 					Value: info.State.String(),
 				})
+			}
+		}
+		t.OnRepeaterWakeUp = func(info trace.RepeaterTickStartInfo) func(trace.RepeaterTickDoneInfo) {
+			name := labels.Label{
+				Tag:   labels.TagName,
+				Value: info.Name,
+			}
+			event := labels.Label{
+				Tag:   labels.TagEvent,
+				Value: info.Event,
+			}
+			start := repeater.Start(name, event)
+			return func(info trace.RepeaterTickDoneInfo) {
+				start.Sync(info.Error, name, event)
 			}
 		}
 		t.OnConnInvoke = func(info trace.ConnInvokeStartInfo) func(trace.ConnInvokeDoneInfo) {
@@ -223,17 +238,29 @@ func Driver(c registry.Config) (t trace.Driver) {
 				},
 			)
 			return func(info trace.ClusterGetDoneInfo) {
-				start.Sync(
-					info.Error,
-					labels.Label{
-						Tag:   labels.TagAddress,
-						Value: info.Endpoint.Address(),
-					},
-					labels.Label{
-						Tag:   labels.TagDataCenter,
-						Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-					},
-				)
+				if info.Error == nil {
+					start.Sync(
+						nil,
+						labels.Label{
+							Tag:   labels.TagAddress,
+							Value: info.Endpoint.Address(),
+						},
+						labels.Label{
+							Tag:   labels.TagDataCenter,
+							Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
+						},
+					)
+				} else {
+					start.Sync(
+						nil,
+						labels.Label{
+							Tag: labels.TagAddress,
+						},
+						labels.Label{
+							Tag: labels.TagDataCenter,
+						},
+					)
+				}
 			}
 		}
 		t.OnClusterInsert = func(info trace.ClusterInsertStartInfo) func(trace.ClusterInsertDoneInfo) {
@@ -247,7 +274,10 @@ func Driver(c registry.Config) (t trace.Driver) {
 			}
 			start := insert.Start(address, dataCenter)
 			return func(info trace.ClusterInsertDoneInfo) {
-				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
+				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter, labels.Label{
+					Tag:   labels.TagSuccess,
+					Value: str.If(info.Inserted, "true", "false"),
+				})
 			}
 		}
 		t.OnClusterRemove = func(info trace.ClusterRemoveStartInfo) func(trace.ClusterRemoveDoneInfo) {
@@ -261,7 +291,10 @@ func Driver(c registry.Config) (t trace.Driver) {
 			}
 			start := remove.Start(address, dataCenter)
 			return func(info trace.ClusterRemoveDoneInfo) {
-				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
+				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter, labels.Label{
+					Tag:   labels.TagSuccess,
+					Value: str.If(info.Removed, "true", "false"),
+				})
 			}
 		}
 		t.OnClusterUpdate = func(info trace.ClusterUpdateStartInfo) func(trace.ClusterUpdateDoneInfo) {
