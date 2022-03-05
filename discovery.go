@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/labels"
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope"
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope/config"
 	"github.com/ydb-platform/ydb-go-sdk-metrics/registry"
@@ -13,11 +14,16 @@ func Discovery(c registry.Config) (t trace.Discovery) {
 			config.New(
 				config.WithValue(config.ValueTypeGauge),
 			),
+			labels.TagAddress,
 		)
 		t.OnDiscover = func(info trace.DiscoverStartInfo) func(trace.DiscoverDoneInfo) {
-			start := discovery.Start()
+			address := labels.Label{
+				Tag:   labels.TagAddress,
+				Value: info.Address,
+			}
+			start := discovery.Start(address)
 			return func(info trace.DiscoverDoneInfo) {
-				start.SyncWithValue(info.Error, float64(len(info.Endpoints)))
+				start.SyncWithValue(info.Error, float64(len(info.Endpoints)), address)
 			}
 		}
 	}
