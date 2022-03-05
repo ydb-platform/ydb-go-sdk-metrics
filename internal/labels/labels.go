@@ -19,7 +19,6 @@ const (
 	TagVersion    = "sdk"
 	TagSource     = "source"
 	TagName       = "name"
-	TagEvent      = "event"
 	TagMethod     = "method"
 	TagError      = "error"
 	TagErrCode    = "errCode"

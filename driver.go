@@ -93,7 +93,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 			config.WithValue(config.ValueTypeGauge),
 		), labels.TagAddress)
 		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagState)
-		repeater := scope.New(c, "repeater", config.New(), labels.TagEvent, labels.TagName)
+		repeater := scope.New(c, "repeater", config.New(), labels.TagMethod, labels.TagName)
 		invoke := scope.New(c, "invoke", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod)
 		stream := scope.New(c, "stream", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod, labels.TagStage)
 		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
@@ -143,7 +143,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: info.Name,
 			}
 			event := labels.Label{
-				Tag:   labels.TagEvent,
+				Tag:   labels.TagMethod,
 				Value: info.Event,
 			}
 			start := repeater.Start(name, event)
