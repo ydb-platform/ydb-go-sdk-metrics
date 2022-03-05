@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ydb-platform/ydb-go-sdk/v3"
 	"io"
 	"net"
-	"strings"
+	"strconv"
+
+	"github.com/ydb-platform/ydb-go-sdk/v3"
 )
 
 type Label struct {
@@ -120,11 +121,24 @@ func Err(err error, lbls ...Label) []Label {
 			},
 		)
 	}
+	if e, ok := err.(ydb.Error); ok {
+		return append(
+			lbls,
+			Label{
+				Tag:   TagError,
+				Value: e.Name(),
+			},
+			Label{
+				Tag:   TagErrCode,
+				Value: strconv.Itoa(int(e.Code())),
+			},
+		)
+	}
 	return append(
 		lbls,
 		Label{
 			Tag:   TagError,
-			Value: "unknown/" + strings.ReplaceAll(err.Error(), " ", "_"),
+			Value: "unknown",
 		},
 		Label{
 			Tag:   TagErrCode,
