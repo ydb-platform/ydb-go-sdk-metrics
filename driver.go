@@ -83,60 +83,8 @@ func Driver(c registry.Config) (t trace.Driver) {
 			}
 		}
 	}
-	if c.Details()&trace.DriverCoreEvents != 0 {
-		c := c.WithSystem("core")
-		take := scope.New(c, "take", config.New(), labels.TagAddress, labels.TagDataCenter)
-		usages := scope.New(c, "usages", config.New(
-			config.WithoutCalls(),
-			config.WithoutLatency(),
-			config.WithoutError(),
-			config.WithValue(config.ValueTypeGauge),
-		), labels.TagAddress)
-		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagState)
+	if c.Details()&trace.DriverRepeaterEvents != 0 {
 		repeater := scope.New(c, "repeater", config.New(), labels.TagMethod, labels.TagName)
-		invoke := scope.New(c, "invoke", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod)
-		stream := scope.New(c, "stream", config.New(), labels.TagAddress, labels.TagDataCenter, labels.TagMethod, labels.TagStage)
-		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := take.Start(address, dataCenter)
-			return func(info trace.ConnTakeDoneInfo) {
-				start.Sync(info.Error, address, dataCenter)
-			}
-		}
-		t.OnConnUsagesChange = func(info trace.ConnUsagesChangeInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			usages.Start(address).SyncValue(float64(info.Usages), address)
-		}
-		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := states.Start(address, dataCenter, labels.Label{
-				Tag:   labels.TagState,
-				Value: info.State.String(),
-			})
-			return func(info trace.ConnStateChangeDoneInfo) {
-				start.Sync(nil, address, dataCenter, labels.Label{
-					Tag:   labels.TagState,
-					Value: info.State.String(),
-				})
-			}
-		}
 		t.OnRepeaterWakeUp = func(info trace.RepeaterTickStartInfo) func(trace.RepeaterTickDoneInfo) {
 			name := labels.Label{
 				Tag:   labels.TagName,
@@ -151,6 +99,54 @@ func Driver(c registry.Config) (t trace.Driver) {
 				start.Sync(info.Error, name, event)
 			}
 		}
+	}
+	if c.Details()&trace.DriverConnEvents != 0 {
+		c := c.WithSystem("conn")
+		take := scope.New(c, "take", config.New(), labels.TagAddress)
+		invoke := scope.New(c, "invoke", config.New(), labels.TagAddress, labels.TagMethod)
+		stream := scope.New(c, "stream", config.New(), labels.TagAddress, labels.TagMethod, labels.TagStage)
+		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagState)
+		park := scope.New(c, "park", config.New(), labels.TagAddress)
+		close := scope.New(c, "close", config.New(), labels.TagAddress)
+		usages := scope.New(c, "usages", config.New(
+			config.WithoutCalls(),
+			config.WithoutLatency(),
+			config.WithoutError(),
+			config.WithValue(config.ValueTypeGauge),
+		), labels.TagAddress)
+		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
+			address := labels.Label{
+				Tag:   labels.TagAddress,
+				Value: info.Endpoint.Address(),
+			}
+			start := take.Start(address)
+			return func(info trace.ConnTakeDoneInfo) {
+				start.Sync(info.Error, address)
+			}
+		}
+		t.OnConnUsagesChange = func(info trace.ConnUsagesChangeInfo) {
+			address := labels.Label{
+				Tag:   labels.TagAddress,
+				Value: info.Endpoint.Address(),
+			}
+			usages.Start(address).SyncValue(float64(info.Usages), address)
+		}
+		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
+			address := labels.Label{
+				Tag:   labels.TagAddress,
+				Value: info.Endpoint.Address(),
+			}
+			start := states.Start(address, labels.Label{
+				Tag:   labels.TagState,
+				Value: info.State.String(),
+			})
+			return func(info trace.ConnStateChangeDoneInfo) {
+				start.Sync(nil, address, labels.Label{
+					Tag:   labels.TagState,
+					Value: info.State.String(),
+				})
+			}
+		}
 		t.OnConnInvoke = func(info trace.ConnInvokeStartInfo) func(trace.ConnInvokeDoneInfo) {
 			method := labels.Label{
 				Tag:   labels.TagMethod,
@@ -160,13 +156,9 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := invoke.Start(address, dataCenter, method)
+			start := invoke.Start(address, method)
 			return func(info trace.ConnInvokeDoneInfo) {
-				start.Sync(info.Error, address, dataCenter, method)
+				start.Sync(info.Error, address, method)
 			}
 		}
 		t.OnConnNewStream = func(info trace.ConnNewStreamStartInfo) func(trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
@@ -178,25 +170,41 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := stream.Start(address, dataCenter, method, labels.Label{
+			start := stream.Start(address, method, labels.Label{
 				Tag:   labels.TagStage,
 				Value: "init",
 			})
 			return func(info trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
-				start.Sync(info.Error, address, dataCenter, method, labels.Label{
+				start.Sync(info.Error, address, method, labels.Label{
 					Tag:   labels.TagStage,
 					Value: "intermediate",
 				})
 				return func(info trace.ConnNewStreamDoneInfo) {
-					start.Sync(info.Error, address, dataCenter, method, labels.Label{
+					start.Sync(info.Error, address, method, labels.Label{
 						Tag:   labels.TagStage,
 						Value: "finish",
 					})
 				}
+			}
+		}
+		t.OnConnPark = func(info trace.ConnParkStartInfo) func(trace.ConnParkDoneInfo) {
+			address := labels.Label{
+				Tag:   labels.TagAddress,
+				Value: info.Endpoint.Address(),
+			}
+			start := park.Start(address)
+			return func(info trace.ConnParkDoneInfo) {
+				start.Sync(info.Error, address)
+			}
+		}
+		t.OnConnClose = func(info trace.ConnCloseStartInfo) func(trace.ConnCloseDoneInfo) {
+			address := labels.Label{
+				Tag:   labels.TagAddress,
+				Value: info.Endpoint.Address(),
+			}
+			start := close.Start(address)
+			return func(info trace.ConnCloseDoneInfo) {
+				start.Sync(info.Error, address)
 			}
 		}
 	}
