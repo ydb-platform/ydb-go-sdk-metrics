@@ -1,12 +1,14 @@
 package metrics
 
 import (
+	"net/url"
+
+	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
+
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/labels"
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope"
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope/config"
-	config2 "github.com/ydb-platform/ydb-go-sdk-metrics/registry"
-	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
-	"net/url"
+	"github.com/ydb-platform/ydb-go-sdk-metrics/registry"
 )
 
 func nodeID(sessionID string) string {
@@ -17,8 +19,36 @@ func nodeID(sessionID string) string {
 	return u.Query().Get("node_id")
 }
 
-func Table(c config2.Config) (t trace.Table) {
+func Table(c registry.Config) (t trace.Table) {
 	c = c.WithSystem("table")
+	if c.Details()&trace.TableEvents != 0 {
+		min := scope.New(c, "min", config.New(
+			config.WithoutCalls(),
+			config.WithoutLatency(),
+			config.WithValue(config.ValueTypeGauge)),
+		)
+		max := scope.New(c, "max", config.New(
+			config.WithoutCalls(),
+			config.WithoutLatency(),
+			config.WithValue(config.ValueTypeGauge)),
+		)
+		t.OnInit = func(info trace.TableInitStartInfo) func(trace.TableInitDoneInfo) {
+			startMin := min.Start()
+			startMax := max.Start()
+			return func(info trace.TableInitDoneInfo) {
+				startMin.SyncValue(float64(info.KeepAliveMinSize))
+				startMax.SyncValue(float64(info.Limit))
+			}
+		}
+		t.OnClose = func(info trace.TableCloseStartInfo) func(trace.TableCloseDoneInfo) {
+			startMin := min.Start()
+			startMax := max.Start()
+			return func(info trace.TableCloseDoneInfo) {
+				startMin.SyncWithValue(info.Error, 0)
+				startMax.SyncWithValue(info.Error, 0)
+			}
+		}
+	}
 	if c.Details()&trace.TablePoolRetryEvents != 0 {
 		do := scope.New(c, "do", config.New(
 			config.WithValue(config.ValueTypeHistogram),
@@ -277,38 +307,12 @@ func Table(c config2.Config) (t trace.Table) {
 	if c.Details()&trace.TablePoolEvents != 0 {
 		c := c.WithSystem("pool")
 		if c.Details()&trace.TablePoolLifeCycleEvents != 0 {
-			min := scope.New(c, "min", config.New(
-				config.WithoutCalls(),
-				config.WithoutLatency(),
-				config.WithValue(config.ValueTypeGauge)),
-			)
-			max := scope.New(c, "max", config.New(
-				config.WithoutCalls(),
-				config.WithoutLatency(),
-				config.WithValue(config.ValueTypeGauge)),
-			)
 			size := scope.New(c, "size", config.New(
 				config.WithoutCalls(),
 				config.WithoutError(),
 				config.WithoutLatency(),
 				config.WithValue(config.ValueTypeGauge),
 			))
-			t.OnPoolInit = func(info trace.PoolInitStartInfo) func(trace.PoolInitDoneInfo) {
-				startMin := min.Start()
-				startMax := max.Start()
-				return func(info trace.PoolInitDoneInfo) {
-					startMin.SyncValue(float64(info.KeepAliveMinSize))
-					startMax.SyncValue(float64(info.Limit))
-				}
-			}
-			t.OnPoolClose = func(info trace.PoolCloseStartInfo) func(trace.PoolCloseDoneInfo) {
-				startMin := min.Start()
-				startMax := max.Start()
-				return func(info trace.PoolCloseDoneInfo) {
-					startMin.SyncWithValue(info.Error, 0)
-					startMax.SyncWithValue(info.Error, 0)
-				}
-			}
 			t.OnPoolStateChange = func(info trace.PooStateChangeInfo) {
 				size.Start().SyncValue(float64(info.Size))
 			}

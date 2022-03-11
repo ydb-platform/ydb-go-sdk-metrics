@@ -58,8 +58,8 @@ func (s *callScope) RecordLatency(tags map[string]string, latency time.Duration)
 	}
 }
 
-func New(c registry.Config, scope string, cfg config.Config, tags ...string) *callScope {
-	c = c.WithSystem(scope)
+func New(c registry.Config, name string, cfg config.Config, tags ...string) *callScope {
+	c = c.WithSystem(name)
 	s := &callScope{
 		config: cfg,
 	}
