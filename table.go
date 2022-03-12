@@ -22,6 +22,7 @@ func nodeID(sessionID string) string {
 func Table(c registry.Config) (t trace.Table) {
 	c = c.WithSystem("table")
 	if c.Details()&trace.TableEvents != 0 {
+		c = c.WithSystem("pool")
 		min := scope.New(c, "min", config.New(
 			config.WithoutCalls(),
 			config.WithoutLatency(),
