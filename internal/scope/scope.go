@@ -12,8 +12,8 @@ import (
 type callScope struct {
 	config  config.Config
 	latency registry.TimerVec
-	calls   registry.GaugeVec
-	errs    registry.GaugeVec
+	calls   registry.CounterVec
+	errs    registry.CounterVec
 	value   interface{} // TODO: go1.18: GaugeVec or HistogramVec
 }
 
@@ -35,20 +35,20 @@ func (s *callScope) Start(lbls ...labels.Label) trace.Trace {
 				Tag:   labels.TagSuccess,
 				Value: "wip",
 			}}, lbls...)...,
-		)).Add(1)
+		)).Inc()
 	}
 	return trace.New(s)
 }
 
-func (s *callScope) AddCall(tags map[string]string, delta int) {
+func (s *callScope) AddCall(tags map[string]string) {
 	if s.config.HasCalls() {
-		s.calls.With(tags).Add(float64(delta))
+		s.calls.With(tags).Inc()
 	}
 }
 
 func (s *callScope) AddError(tags map[string]string) {
 	if s.config.HasError() {
-		s.errs.With(tags).Add(1)
+		s.errs.With(tags).Inc()
 	}
 }
 
@@ -64,13 +64,13 @@ func New(c registry.Config, name string, cfg config.Config, tags ...string) *cal
 		config: cfg,
 	}
 	if cfg.HasCalls() {
-		s.calls = c.GaugeVec("calls", append([]string{labels.TagSuccess, labels.TagVersion}, tags...)...)
+		s.calls = c.CounterVec("calls", append([]string{labels.TagSuccess, labels.TagVersion}, tags...)...)
 	}
 	if cfg.HasLatency() {
 		s.latency = c.TimerVec("latency", append([]string{labels.TagSuccess, labels.TagVersion}, tags...)...)
 	}
 	if cfg.HasError() {
-		s.errs = c.GaugeVec("errors", append([]string{labels.TagVersion, labels.TagError, labels.TagErrCode}, tags...)...)
+		s.errs = c.CounterVec("errors", append([]string{labels.TagVersion, labels.TagError, labels.TagErrCode}, tags...)...)
 	}
 	switch cfg.ValueType() {
 	case config.ValueTypeGauge:

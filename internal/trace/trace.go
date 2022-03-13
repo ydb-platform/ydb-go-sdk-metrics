@@ -28,7 +28,7 @@ type Trace interface {
 
 type Scope interface {
 	Start(lbls ...labels.Label) Trace
-	AddCall(tags map[string]string, calls int)
+	AddCall(tags map[string]string)
 	AddError(tags map[string]string)
 	RecordLatency(tags map[string]string, latency time.Duration)
 	RecordValue(tags map[string]string, value float64)
@@ -65,7 +65,7 @@ func (t *callTrace) syncWithSuccess(ok bool, lbls ...labels.Label) (callLabels [
 		Tag:   labels.TagSuccess,
 		Value: str.If(ok, "true", "false"),
 	}
-	t.scope.AddCall(labels.KeyValue(append([]labels.Label{Version, success}, lbls...)...), 1)
+	t.scope.AddCall(labels.KeyValue(append([]labels.Label{Version, success}, lbls...)...))
 	t.scope.RecordLatency(labels.KeyValue(append([]labels.Label{Version, success}, lbls...)...), time.Since(t.start))
 	return append([]labels.Label{Version, success}, lbls...)
 }

@@ -6,7 +6,7 @@ type Gauge interface {
 	Set(value float64)
 }
 
-// GaugeVec returns Gauge from GaugeVec by lables
+// GaugeVec returns Gauge from GaugeVec by labels
 type GaugeVec interface {
 	With(map[string]string) Gauge
 }

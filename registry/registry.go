@@ -1,6 +1,11 @@
 package registry
 
 type Registry interface {
+	// CounterVec returns CounterVec by name, subsystem and labels
+	// If counter by args already created - return counter from cache
+	// If counter by args nothing - create and return newest counter
+	CounterVec(name string, labelNames ...string) CounterVec
+
 	// GaugeVec returns GaugeVec by name, subsystem and labels
 	// If gauge by args already created - return gauge from cache
 	// If gauge by args nothing - create and return newest gauge
