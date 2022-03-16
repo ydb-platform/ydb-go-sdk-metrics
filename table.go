@@ -47,14 +47,10 @@ func Table(c registry.Config) (t trace.Table) {
 		{
 			c := c.WithSystem("pool")
 			min := scope.New(c, "min", config.New(
-				config.WithoutCalls(),
-				config.WithoutLatency(),
-				config.WithValue(config.ValueTypeGauge)),
+				config.WithValueOnly(config.ValueTypeGauge)),
 			)
 			max := scope.New(c, "max", config.New(
-				config.WithoutCalls(),
-				config.WithoutLatency(),
-				config.WithValue(config.ValueTypeGauge)),
+				config.WithValueOnly(config.ValueTypeGauge)),
 			)
 			t.OnInit = func(info trace.TableInitStartInfo) func(trace.TableInitDoneInfo) {
 				startMin := min.Start()
@@ -331,10 +327,7 @@ func Table(c registry.Config) (t trace.Table) {
 		c := c.WithSystem("pool")
 		if c.Details()&trace.TablePoolLifeCycleEvents != 0 {
 			size := scope.New(c, "size", config.New(
-				config.WithoutCalls(),
-				config.WithoutError(),
-				config.WithoutLatency(),
-				config.WithValue(config.ValueTypeGauge),
+				config.WithValueOnly(config.ValueTypeGauge),
 			))
 			t.OnPoolStateChange = func(info trace.TablePooStateChangeInfo) {
 				size.Start().SyncValue(float64(info.Size))

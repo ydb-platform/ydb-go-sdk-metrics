@@ -110,10 +110,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 		park := scope.New(c, "park", config.New(), labels.TagAddress)
 		close := scope.New(c, "close", config.New(), labels.TagAddress)
 		usages := scope.New(c, "usages", config.New(
-			config.WithoutCalls(),
-			config.WithoutLatency(),
-			config.WithoutError(),
-			config.WithValue(config.ValueTypeGauge),
+			config.WithValueOnly(config.ValueTypeGauge),
 		), labels.TagAddress)
 		t.OnConnTake = func(info trace.DriverConnTakeStartInfo) func(trace.DriverConnTakeDoneInfo) {
 			address := labels.Label{

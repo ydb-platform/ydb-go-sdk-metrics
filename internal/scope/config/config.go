@@ -70,6 +70,15 @@ func WithValue(valueType ValueType) option {
 	}
 }
 
+func WithValueOnly(valueType ValueType) option {
+	return func(o *config) {
+		o.withValue = valueType
+		o.withCalls = false
+		o.withError = false
+		o.withLatency = false
+	}
+}
+
 func WithValueBuckets(buckets []float64) option {
 	return func(o *config) {
 		o.valueBuckets = buckets
