@@ -63,20 +63,34 @@ func New(c registry.Config, name string, cfg config.Config, tags ...string) *cal
 	s := &callScope{
 		config: cfg,
 	}
+
 	if cfg.HasCalls() {
 		s.calls = c.CounterVec("calls", append([]string{labels.TagSuccess, labels.TagVersion}, tags...)...)
 	}
+
 	if cfg.HasLatency() {
 		s.latency = c.TimerVec("latency", append([]string{labels.TagSuccess, labels.TagVersion}, tags...)...)
 	}
+
 	if cfg.HasError() {
 		s.errs = c.CounterVec("errors", append([]string{labels.TagVersion, labels.TagError, labels.TagErrCode}, tags...)...)
 	}
+
+	if cfg.ValueType() == config.ValueTypeNone {
+		return s
+	}
+
+	tags = append(tags, labels.TagVersion)
+
+	if cfg.HasError() {
+		tags = append(tags, labels.TagSuccess)
+	}
+
 	switch cfg.ValueType() {
 	case config.ValueTypeGauge:
-		s.value = c.GaugeVec("value", append([]string{labels.TagVersion}, tags...)...)
+		s.value = c.GaugeVec("value", tags...)
 	case config.ValueTypeHistogram:
-		s.value = c.HistogramVec("value", cfg.ValueBuckets(), append([]string{labels.TagVersion}, tags...)...)
+		s.value = c.HistogramVec("value", cfg.ValueBuckets(), tags...)
 	default:
 		// nop
 	}

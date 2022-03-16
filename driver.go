@@ -43,50 +43,50 @@ func Driver(c registry.Config) (t trace.Driver) {
 		), labels.TagAddress)
 		dial := scope.New(c, "dial", config.New(), labels.TagAddress)
 		close := scope.New(c, "close", config.New(), labels.TagAddress)
-		t.OnNetRead = func(info trace.NetReadStartInfo) func(trace.NetReadDoneInfo) {
+		t.OnNetRead = func(info trace.DriverNetReadStartInfo) func(trace.DriverNetReadDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
 			start := read.Start(address)
-			return func(info trace.NetReadDoneInfo) {
+			return func(info trace.DriverNetReadDoneInfo) {
 				start.SyncWithValue(info.Error, float64(info.Received), address)
 			}
 		}
-		t.OnNetWrite = func(info trace.NetWriteStartInfo) func(trace.NetWriteDoneInfo) {
+		t.OnNetWrite = func(info trace.DriverNetWriteStartInfo) func(trace.DriverNetWriteDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
 			start := write.Start(address)
-			return func(info trace.NetWriteDoneInfo) {
+			return func(info trace.DriverNetWriteDoneInfo) {
 				start.SyncWithValue(info.Error, float64(info.Sent), address)
 			}
 		}
-		t.OnNetDial = func(info trace.NetDialStartInfo) func(trace.NetDialDoneInfo) {
+		t.OnNetDial = func(info trace.DriverNetDialStartInfo) func(trace.DriverNetDialDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
 			start := dial.Start(address)
-			return func(info trace.NetDialDoneInfo) {
+			return func(info trace.DriverNetDialDoneInfo) {
 				start.Sync(info.Error, address)
 			}
 		}
-		t.OnNetClose = func(info trace.NetCloseStartInfo) func(trace.NetCloseDoneInfo) {
+		t.OnNetClose = func(info trace.DriverNetCloseStartInfo) func(trace.DriverNetCloseDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
 			start := close.Start(address)
-			return func(info trace.NetCloseDoneInfo) {
+			return func(info trace.DriverNetCloseDoneInfo) {
 				start.Sync(info.Error, address)
 			}
 		}
 	}
 	if c.Details()&trace.DriverRepeaterEvents != 0 {
 		repeater := scope.New(c, "repeater", config.New(), labels.TagMethod, labels.TagName)
-		t.OnRepeaterWakeUp = func(info trace.RepeaterTickStartInfo) func(trace.RepeaterTickDoneInfo) {
+		t.OnRepeaterWakeUp = func(info trace.DriverRepeaterTickStartInfo) func(trace.DriverRepeaterTickDoneInfo) {
 			name := labels.Label{
 				Tag:   labels.TagName,
 				Value: info.Name,
@@ -96,7 +96,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: info.Event,
 			}
 			start := repeater.Start(name, event)
-			return func(info trace.RepeaterTickDoneInfo) {
+			return func(info trace.DriverRepeaterTickDoneInfo) {
 				start.Sync(info.Error, name, event)
 			}
 		}
@@ -115,24 +115,24 @@ func Driver(c registry.Config) (t trace.Driver) {
 			config.WithoutError(),
 			config.WithValue(config.ValueTypeGauge),
 		), labels.TagAddress)
-		t.OnConnTake = func(info trace.ConnTakeStartInfo) func(trace.ConnTakeDoneInfo) {
+		t.OnConnTake = func(info trace.DriverConnTakeStartInfo) func(trace.DriverConnTakeDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
 			start := take.Start(address)
-			return func(info trace.ConnTakeDoneInfo) {
+			return func(info trace.DriverConnTakeDoneInfo) {
 				start.Sync(info.Error, address)
 			}
 		}
-		t.OnConnUsagesChange = func(info trace.ConnUsagesChangeInfo) {
+		t.OnConnUsagesChange = func(info trace.DriverConnUsagesChangeInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
 			usages.Start(address).SyncValue(float64(info.Usages), address)
 		}
-		t.OnConnStateChange = func(info trace.ConnStateChangeStartInfo) func(trace.ConnStateChangeDoneInfo) {
+		t.OnConnStateChange = func(info trace.DriverConnStateChangeStartInfo) func(trace.DriverConnStateChangeDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
@@ -141,14 +141,14 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Tag:   labels.TagState,
 				Value: info.State.String(),
 			})
-			return func(info trace.ConnStateChangeDoneInfo) {
+			return func(info trace.DriverConnStateChangeDoneInfo) {
 				start.Sync(nil, address, labels.Label{
 					Tag:   labels.TagState,
 					Value: info.State.String(),
 				})
 			}
 		}
-		t.OnConnInvoke = func(info trace.ConnInvokeStartInfo) func(trace.ConnInvokeDoneInfo) {
+		t.OnConnInvoke = func(info trace.DriverConnInvokeStartInfo) func(trace.DriverConnInvokeDoneInfo) {
 			method := labels.Label{
 				Tag:   labels.TagMethod,
 				Value: string(info.Method),
@@ -158,11 +158,11 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: info.Endpoint.Address(),
 			}
 			start := invoke.Start(address, method)
-			return func(info trace.ConnInvokeDoneInfo) {
+			return func(info trace.DriverConnInvokeDoneInfo) {
 				start.Sync(info.Error, address, method)
 			}
 		}
-		t.OnConnNewStream = func(info trace.ConnNewStreamStartInfo) func(trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
+		t.OnConnNewStream = func(info trace.DriverConnNewStreamStartInfo) func(trace.DriverConnNewStreamRecvInfo) func(trace.DriverConnNewStreamDoneInfo) {
 			method := labels.Label{
 				Tag:   labels.TagMethod,
 				Value: string(info.Method),
@@ -175,12 +175,12 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Tag:   labels.TagStage,
 				Value: "init",
 			})
-			return func(info trace.ConnNewStreamRecvInfo) func(trace.ConnNewStreamDoneInfo) {
+			return func(info trace.DriverConnNewStreamRecvInfo) func(trace.DriverConnNewStreamDoneInfo) {
 				start.Sync(info.Error, address, method, labels.Label{
 					Tag:   labels.TagStage,
 					Value: "intermediate",
 				})
-				return func(info trace.ConnNewStreamDoneInfo) {
+				return func(info trace.DriverConnNewStreamDoneInfo) {
 					start.Sync(info.Error, address, method, labels.Label{
 						Tag:   labels.TagStage,
 						Value: "finish",
@@ -188,23 +188,23 @@ func Driver(c registry.Config) (t trace.Driver) {
 				}
 			}
 		}
-		t.OnConnPark = func(info trace.ConnParkStartInfo) func(trace.ConnParkDoneInfo) {
+		t.OnConnPark = func(info trace.DriverConnParkStartInfo) func(trace.DriverConnParkDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
 			start := park.Start(address)
-			return func(info trace.ConnParkDoneInfo) {
+			return func(info trace.DriverConnParkDoneInfo) {
 				start.Sync(info.Error, address)
 			}
 		}
-		t.OnConnClose = func(info trace.ConnCloseStartInfo) func(trace.ConnCloseDoneInfo) {
+		t.OnConnClose = func(info trace.DriverConnCloseStartInfo) func(trace.DriverConnCloseDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
 			}
 			start := close.Start(address)
-			return func(info trace.ConnCloseDoneInfo) {
+			return func(info trace.DriverConnCloseDoneInfo) {
 				start.Sync(info.Error, address)
 			}
 		}
@@ -223,19 +223,19 @@ func Driver(c registry.Config) (t trace.Driver) {
 		remove := scope.New(c, "remove", config.New(), labels.TagAddress, labels.TagDataCenter)
 		update := scope.New(c, "update", config.New(), labels.TagAddress, labels.TagDataCenter)
 		pessimize := scope.New(c, "pessimize", config.New(), labels.TagAddress, labels.TagDataCenter)
-		t.OnClusterInit = func(info trace.ClusterInitStartInfo) func(trace.ClusterInitDoneInfo) {
+		t.OnClusterInit = func(info trace.DriverClusterInitStartInfo) func(trace.DriverClusterInitDoneInfo) {
 			start := init.Start()
-			return func(info trace.ClusterInitDoneInfo) {
+			return func(info trace.DriverClusterInitDoneInfo) {
 				start.Sync(nil)
 			}
 		}
-		t.OnClusterClose = func(info trace.ClusterCloseStartInfo) func(trace.ClusterCloseDoneInfo) {
+		t.OnClusterClose = func(info trace.DriverClusterCloseStartInfo) func(trace.DriverClusterCloseDoneInfo) {
 			start := close.Start()
-			return func(info trace.ClusterCloseDoneInfo) {
+			return func(info trace.DriverClusterCloseDoneInfo) {
 				start.Sync(info.Error)
 			}
 		}
-		t.OnClusterGet = func(info trace.ClusterGetStartInfo) func(trace.ClusterGetDoneInfo) {
+		t.OnClusterGet = func(info trace.DriverClusterGetStartInfo) func(trace.DriverClusterGetDoneInfo) {
 			start := get.Start(
 				labels.Label{
 					Tag:   labels.TagAddress,
@@ -246,7 +246,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 					Value: "wip",
 				},
 			)
-			return func(info trace.ClusterGetDoneInfo) {
+			return func(info trace.DriverClusterGetDoneInfo) {
 				if info.Error == nil {
 					start.Sync(
 						nil,
@@ -272,7 +272,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 				}
 			}
 		}
-		t.OnClusterInsert = func(info trace.ClusterInsertStartInfo) func(trace.ClusterInsertDoneInfo) {
+		t.OnClusterInsert = func(info trace.DriverClusterInsertStartInfo) func(trace.DriverClusterInsertDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
@@ -282,14 +282,14 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := insert.Start(address, dataCenter)
-			return func(info trace.ClusterInsertDoneInfo) {
+			return func(info trace.DriverClusterInsertDoneInfo) {
 				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter, labels.Label{
 					Tag:   labels.TagSuccess,
 					Value: str.If(info.Inserted, "true", "false"),
 				})
 			}
 		}
-		t.OnClusterRemove = func(info trace.ClusterRemoveStartInfo) func(trace.ClusterRemoveDoneInfo) {
+		t.OnClusterRemove = func(info trace.DriverClusterRemoveStartInfo) func(trace.DriverClusterRemoveDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
@@ -299,14 +299,14 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := remove.Start(address, dataCenter)
-			return func(info trace.ClusterRemoveDoneInfo) {
+			return func(info trace.DriverClusterRemoveDoneInfo) {
 				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter, labels.Label{
 					Tag:   labels.TagSuccess,
 					Value: str.If(info.Removed, "true", "false"),
 				})
 			}
 		}
-		t.OnClusterUpdate = func(info trace.ClusterUpdateStartInfo) func(trace.ClusterUpdateDoneInfo) {
+		t.OnClusterUpdate = func(info trace.DriverClusterUpdateStartInfo) func(trace.DriverClusterUpdateDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
@@ -316,11 +316,11 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := update.Start(address, dataCenter)
-			return func(info trace.ClusterUpdateDoneInfo) {
+			return func(info trace.DriverClusterUpdateDoneInfo) {
 				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
 			}
 		}
-		t.OnPessimizeNode = func(info trace.PessimizeNodeStartInfo) func(trace.PessimizeNodeDoneInfo) {
+		t.OnPessimizeNode = func(info trace.DriverPessimizeNodeStartInfo) func(trace.DriverPessimizeNodeDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Endpoint.Address(),
@@ -330,7 +330,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
 			}
 			start := pessimize.Start(address, dataCenter)
-			return func(info trace.PessimizeNodeDoneInfo) {
+			return func(info trace.DriverPessimizeNodeDoneInfo) {
 				// Sync cause instead pessimize result error
 				start.Sync(nil, address, dataCenter)
 			}
@@ -339,9 +339,9 @@ func Driver(c registry.Config) (t trace.Driver) {
 	if c.Details()&trace.DriverCredentialsEvents != 0 {
 		c := c.WithSystem("credentials")
 		get := scope.New(c, "get", config.New())
-		t.OnGetCredentials = func(info trace.GetCredentialsStartInfo) func(trace.GetCredentialsDoneInfo) {
+		t.OnGetCredentials = func(info trace.DriverGetCredentialsStartInfo) func(trace.DriverGetCredentialsDoneInfo) {
 			start := get.Start()
-			return func(info trace.GetCredentialsDoneInfo) {
+			return func(info trace.DriverGetCredentialsDoneInfo) {
 				start.Sync(info.Error)
 			}
 		}

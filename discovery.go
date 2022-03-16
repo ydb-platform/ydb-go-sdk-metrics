@@ -17,13 +17,13 @@ func Discovery(c registry.Config) (t trace.Discovery) {
 			),
 			labels.TagAddress,
 		)
-		t.OnDiscover = func(info trace.DiscoverStartInfo) func(trace.DiscoverDoneInfo) {
+		t.OnDiscover = func(info trace.DiscoveryDiscoverStartInfo) func(trace.DiscoveryDiscoverDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
 				Value: info.Address,
 			}
 			start := discovery.Start(address)
-			return func(info trace.DiscoverDoneInfo) {
+			return func(info trace.DiscoveryDiscoverDoneInfo) {
 				start.SyncWithValue(info.Error, float64(len(info.Endpoints)), address)
 			}
 		}

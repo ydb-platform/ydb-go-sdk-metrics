@@ -56,8 +56,7 @@ func (t *callTrace) SyncValue(v float64, lbls ...labels.Label) {
 
 func (t *callTrace) SyncWithValue(err error, v float64, lbls ...labels.Label) {
 	t.syncError(err, lbls...)
-	t.syncWithSuccess(err == nil, lbls...)
-	t.syncValue(v, lbls...)
+	t.syncValue(v, t.syncWithSuccess(err == nil, lbls...)...)
 }
 
 func (t *callTrace) syncWithSuccess(ok bool, lbls ...labels.Label) (callLabels []labels.Label) {
