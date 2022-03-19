@@ -2,4 +2,4 @@ module github.com/ydb-platform/ydb-go-sdk-metrics
 
 go 1.16
 
-require github.com/ydb-platform/ydb-go-sdk/v3 v3.14.5-rc1
+require github.com/ydb-platform/ydb-go-sdk/v3 v3.15.0
