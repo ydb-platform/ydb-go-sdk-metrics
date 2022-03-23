@@ -95,29 +95,29 @@ func Err(err error, lbls ...Label) []Label {
 			},
 		)
 	}
-	if d := ydb.TransportErrorDescription(err); d != nil {
+	if te := ydb.TransportError(err); te != nil {
 		return append(
 			lbls,
 			Label{
 				Tag:   TagError,
-				Value: "transport/" + d.Name(),
+				Value: "transport/" + te.Name(),
 			},
 			Label{
 				Tag:   TagErrCode,
-				Value: fmt.Sprintf("%06d", d.Code()),
+				Value: fmt.Sprintf("%06d", te.Code()),
 			},
 		)
 	}
-	if d := ydb.OperationErrorDescription(err); d != nil {
+	if oe := ydb.OperationError(err); oe != nil {
 		return append(
 			lbls,
 			Label{
 				Tag:   TagError,
-				Value: "operation/" + d.Name(),
+				Value: "operation/" + oe.Name(),
 			},
 			Label{
 				Tag:   TagErrCode,
-				Value: fmt.Sprintf("%06d", d.Code()),
+				Value: fmt.Sprintf("%06d", oe.Code()),
 			},
 		)
 	}
