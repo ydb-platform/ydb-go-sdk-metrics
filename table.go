@@ -44,6 +44,72 @@ func Table(c registry.Config) (t trace.Table) {
 				}
 			}
 		}
+		do := scope.New(c, "do", config.New(
+			config.WithValue(config.ValueTypeHistogram),
+			config.WithValueBuckets([]float64{
+				1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
+			}),
+		), labels.TagIdempotent, labels.TagStage)
+		t.OnDo = func(info trace.TableDoStartInfo) func(info trace.TableDoIntermediateInfo) func(trace.TableDoDoneInfo) {
+			idempotent := labels.Label{
+				Tag: labels.TagIdempotent,
+				Value: func() string {
+					if info.Idempotent {
+						return "true"
+					}
+					return "false"
+				}(),
+			}
+			start := do.Start(idempotent, labels.Label{
+				Tag:   labels.TagStage,
+				Value: "init",
+			})
+			return func(info trace.TableDoIntermediateInfo) func(trace.TableDoDoneInfo) {
+				start.Sync(info.Error, idempotent, labels.Label{
+					Tag:   labels.TagStage,
+					Value: "intermediate",
+				})
+				return func(info trace.TableDoDoneInfo) {
+					start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, labels.Label{
+						Tag:   labels.TagStage,
+						Value: "finish",
+					})
+				}
+			}
+		}
+		doTx := scope.New(c, "do_tx", config.New(
+			config.WithValue(config.ValueTypeHistogram),
+			config.WithValueBuckets([]float64{
+				1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
+			}),
+		), labels.TagIdempotent, labels.TagStage)
+		t.OnDoTx = func(info trace.TableDoTxStartInfo) func(info trace.TableDoTxIntermediateInfo) func(trace.TableDoTxDoneInfo) {
+			idempotent := labels.Label{
+				Tag: labels.TagIdempotent,
+				Value: func() string {
+					if info.Idempotent {
+						return "true"
+					}
+					return "false"
+				}(),
+			}
+			start := doTx.Start(idempotent, labels.Label{
+				Tag:   labels.TagStage,
+				Value: "init",
+			})
+			return func(info trace.TableDoTxIntermediateInfo) func(trace.TableDoTxDoneInfo) {
+				start.Sync(info.Error, idempotent, labels.Label{
+					Tag:   labels.TagStage,
+					Value: "intermediate",
+				})
+				return func(info trace.TableDoTxDoneInfo) {
+					start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, labels.Label{
+						Tag:   labels.TagStage,
+						Value: "finish",
+					})
+				}
+			}
+		}
 		{
 			c := c.WithSystem("pool")
 			min := scope.New(c, "min", config.New(
@@ -66,72 +132,6 @@ func Table(c registry.Config) (t trace.Table) {
 				return func(info trace.TableCloseDoneInfo) {
 					startMin.SyncWithValue(info.Error, 0)
 					startMax.SyncWithValue(info.Error, 0)
-				}
-			}
-			do := scope.New(c, "do", config.New(
-				config.WithValue(config.ValueTypeHistogram),
-				config.WithValueBuckets([]float64{
-					1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
-				}),
-			), labels.TagIdempotent, labels.TagStage)
-			doTx := scope.New(c, "do_tx", config.New(
-				config.WithValue(config.ValueTypeHistogram),
-				config.WithValueBuckets([]float64{
-					1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
-				}),
-			), labels.TagIdempotent, labels.TagStage)
-			t.OnDo = func(info trace.TableDoStartInfo) func(info trace.TableDoIntermediateInfo) func(trace.TableDoDoneInfo) {
-				idempotent := labels.Label{
-					Tag: labels.TagIdempotent,
-					Value: func() string {
-						if info.Idempotent {
-							return "true"
-						}
-						return "false"
-					}(),
-				}
-				start := do.Start(idempotent, labels.Label{
-					Tag:   labels.TagStage,
-					Value: "init",
-				})
-				return func(info trace.TableDoIntermediateInfo) func(trace.TableDoDoneInfo) {
-					start.Sync(info.Error, idempotent, labels.Label{
-						Tag:   labels.TagStage,
-						Value: "intermediate",
-					})
-					return func(info trace.TableDoDoneInfo) {
-						start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, labels.Label{
-							Tag:   labels.TagStage,
-							Value: "finish",
-						})
-					}
-				}
-			}
-			t.OnDoTx = func(info trace.TableDoTxStartInfo) func(info trace.TableDoTxIntermediateInfo) func(trace.TableDoTxDoneInfo) {
-				idempotent := labels.Label{
-					Tag: labels.TagIdempotent,
-					Value: func() string {
-						if info.Idempotent {
-							return "true"
-						}
-						return "false"
-					}(),
-				}
-				start := doTx.Start(idempotent, labels.Label{
-					Tag:   labels.TagStage,
-					Value: "init",
-				})
-				return func(info trace.TableDoTxIntermediateInfo) func(trace.TableDoTxDoneInfo) {
-					start.Sync(info.Error, idempotent, labels.Label{
-						Tag:   labels.TagStage,
-						Value: "intermediate",
-					})
-					return func(info trace.TableDoTxDoneInfo) {
-						start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, labels.Label{
-							Tag:   labels.TagStage,
-							Value: "finish",
-						})
-					}
 				}
 			}
 		}
