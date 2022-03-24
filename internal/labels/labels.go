@@ -121,7 +121,8 @@ func Err(err error, lbls ...Label) []Label {
 			},
 		)
 	}
-	if e, ok := err.(ydb.Error); ok {
+	var e ydb.Error
+	if errors.As(err, &e) {
 		return append(
 			lbls,
 			Label{

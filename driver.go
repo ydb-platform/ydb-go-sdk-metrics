@@ -218,7 +218,6 @@ func Driver(c registry.Config) (t trace.Driver) {
 		get := scope.New(c, "get", config.New(), labels.TagAddress, labels.TagDataCenter)
 		insert := scope.New(c, "insert", config.New(), labels.TagAddress, labels.TagDataCenter)
 		remove := scope.New(c, "remove", config.New(), labels.TagAddress, labels.TagDataCenter)
-		update := scope.New(c, "update", config.New(), labels.TagAddress, labels.TagDataCenter)
 		pessimize := scope.New(c, "pessimize", config.New(), labels.TagAddress, labels.TagDataCenter)
 		t.OnClusterInit = func(info trace.DriverClusterInitStartInfo) func(trace.DriverClusterInitDoneInfo) {
 			start := init.Start()
@@ -301,20 +300,6 @@ func Driver(c registry.Config) (t trace.Driver) {
 					Tag:   labels.TagSuccess,
 					Value: str.If(info.Removed, "true", "false"),
 				})
-			}
-		}
-		t.OnClusterUpdate = func(info trace.DriverClusterUpdateStartInfo) func(trace.DriverClusterUpdateDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := update.Start(address, dataCenter)
-			return func(info trace.DriverClusterUpdateDoneInfo) {
-				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter)
 			}
 		}
 		t.OnPessimizeNode = func(info trace.DriverPessimizeNodeStartInfo) func(trace.DriverPessimizeNodeDoneInfo) {
