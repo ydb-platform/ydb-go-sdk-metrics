@@ -108,9 +108,9 @@ func main() {
             registry.m.Lock()
         }
     }
-    db, err := ydb.New(
+    db, err := ydb.Open(
         context.Background(),
-		ydb.MustConnectionString(connection),
+		os.Getenv("YDB_CONNECTION_STRING"),
 		metrics.WithTraces(registry)
 	)
     // work with db
