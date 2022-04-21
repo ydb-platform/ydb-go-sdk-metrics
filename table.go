@@ -119,19 +119,15 @@ func Table(c registry.Config) (t trace.Table) {
 				config.WithValueOnly(config.ValueTypeGauge)),
 			)
 			t.OnInit = func(info trace.TableInitStartInfo) func(trace.TableInitDoneInfo) {
-				startMin := min.Start()
-				startMax := max.Start()
 				return func(info trace.TableInitDoneInfo) {
-					startMin.SyncValue(float64(info.KeepAliveMinSize))
-					startMax.SyncValue(float64(info.Limit))
+					min.Start().SyncValue(float64(info.KeepAliveMinSize))
+					max.Start().SyncValue(float64(info.Limit))
 				}
 			}
 			t.OnClose = func(info trace.TableCloseStartInfo) func(trace.TableCloseDoneInfo) {
-				startMin := min.Start()
-				startMax := max.Start()
 				return func(info trace.TableCloseDoneInfo) {
-					startMin.SyncWithValue(info.Error, 0)
-					startMax.SyncWithValue(info.Error, 0)
+					min.Start().SyncValue(0)
+					max.Start().SyncValue(0)
 				}
 			}
 		}
