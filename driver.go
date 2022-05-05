@@ -86,7 +86,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 	}
 	if c.Details()&trace.DriverRepeaterEvents != 0 {
 		repeater := scope.New(c, "repeater", config.New(), labels.TagMethod, labels.TagName)
-		t.OnRepeaterWakeUp = func(info trace.DriverRepeaterTickStartInfo) func(trace.DriverRepeaterTickDoneInfo) {
+		t.OnRepeaterWakeUp = func(info trace.DriverRepeaterWakeUpStartInfo) func(trace.DriverRepeaterWakeUpDoneInfo) {
 			name := labels.Label{
 				Tag:   labels.TagName,
 				Value: info.Name,
@@ -96,7 +96,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 				Value: info.Event,
 			}
 			start := repeater.Start(name, event)
-			return func(info trace.DriverRepeaterTickDoneInfo) {
+			return func(info trace.DriverRepeaterWakeUpDoneInfo) {
 				start.Sync(info.Error, name, event)
 			}
 		}
