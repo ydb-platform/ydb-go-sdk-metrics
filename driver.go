@@ -109,9 +109,6 @@ func Driver(c registry.Config) (t trace.Driver) {
 		states := scope.New(c, "state", config.New(), labels.TagAddress, labels.TagState)
 		park := scope.New(c, "park", config.New(), labels.TagAddress)
 		close := scope.New(c, "close", config.New(), labels.TagAddress)
-		usages := scope.New(c, "usages", config.New(
-			config.WithValueOnly(config.ValueTypeGauge),
-		), labels.TagAddress)
 		t.OnConnTake = func(info trace.DriverConnTakeStartInfo) func(trace.DriverConnTakeDoneInfo) {
 			address := labels.Label{
 				Tag:   labels.TagAddress,
@@ -121,13 +118,6 @@ func Driver(c registry.Config) (t trace.Driver) {
 			return func(info trace.DriverConnTakeDoneInfo) {
 				start.Sync(info.Error, address)
 			}
-		}
-		t.OnConnUsagesChange = func(info trace.DriverConnUsagesChangeInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			usages.Start(address).SyncValue(float64(info.Usages), address)
 		}
 		t.OnConnStateChange = func(info trace.DriverConnStateChangeStartInfo) func(trace.DriverConnStateChangeDoneInfo) {
 			address := labels.Label{
@@ -216,9 +206,6 @@ func Driver(c registry.Config) (t trace.Driver) {
 			config.WithoutCalls(),
 		))
 		get := scope.New(c, "get", config.New(), labels.TagAddress, labels.TagDataCenter)
-		insert := scope.New(c, "insert", config.New(), labels.TagAddress, labels.TagDataCenter)
-		remove := scope.New(c, "remove", config.New(), labels.TagAddress, labels.TagDataCenter)
-		pessimize := scope.New(c, "pessimize", config.New(), labels.TagAddress, labels.TagDataCenter)
 		t.OnClusterInit = func(info trace.DriverClusterInitStartInfo) func(trace.DriverClusterInitDoneInfo) {
 			start := init.Start()
 			return func(info trace.DriverClusterInitDoneInfo) {
@@ -266,55 +253,6 @@ func Driver(c registry.Config) (t trace.Driver) {
 						},
 					)
 				}
-			}
-		}
-		t.OnClusterInsert = func(info trace.DriverClusterInsertStartInfo) func(trace.DriverClusterInsertDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := insert.Start(address, dataCenter)
-			return func(info trace.DriverClusterInsertDoneInfo) {
-				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter, labels.Label{
-					Tag:   labels.TagSuccess,
-					Value: str.If(info.Inserted, "true", "false"),
-				})
-			}
-		}
-		t.OnClusterRemove = func(info trace.DriverClusterRemoveStartInfo) func(trace.DriverClusterRemoveDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := remove.Start(address, dataCenter)
-			return func(info trace.DriverClusterRemoveDoneInfo) {
-				start.SyncWithValue(nil, float64(info.State.Code()), address, dataCenter, labels.Label{
-					Tag:   labels.TagSuccess,
-					Value: str.If(info.Removed, "true", "false"),
-				})
-			}
-		}
-		t.OnPessimizeNode = func(info trace.DriverPessimizeNodeStartInfo) func(trace.DriverPessimizeNodeDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Endpoint.Address(),
-			}
-			dataCenter := labels.Label{
-				Tag:   labels.TagDataCenter,
-				Value: str.If(info.Endpoint.LocalDC(), "local", "remote"),
-			}
-			start := pessimize.Start(address, dataCenter)
-			return func(info trace.DriverPessimizeNodeDoneInfo) {
-				// Sync cause instead pessimize result error
-				start.Sync(nil, address, dataCenter)
 			}
 		}
 	}
