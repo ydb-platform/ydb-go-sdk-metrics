@@ -196,8 +196,8 @@ func Driver(c registry.Config) (t trace.Driver) {
 			}
 		}
 	}
-	if c.Details()&trace.DriverClusterEvents != 0 {
-		c := c.WithSystem("cluster")
+	if c.Details()&trace.DriverBalancerEvents != 0 {
+		c := c.WithSystem("balancer")
 		init := scope.New(c, "init", config.New(
 			config.WithoutCalls(),
 			config.WithoutError(),
@@ -205,21 +205,43 @@ func Driver(c registry.Config) (t trace.Driver) {
 		close := scope.New(c, "close", config.New(
 			config.WithoutCalls(),
 		))
-		get := scope.New(c, "get", config.New(), labels.TagAddress, labels.TagDataCenter)
-		t.OnClusterInit = func(info trace.DriverClusterInitStartInfo) func(trace.DriverClusterInitDoneInfo) {
+		update := scope.New(c, "update",
+			config.New(
+				config.WithValue(config.ValueTypeGauge),
+			),
+			labels.TagDataCenter,
+		)
+		choose := scope.New(c, "chooseEndpoint", config.New(), labels.TagAddress, labels.TagDataCenter)
+		t.OnBalancerInit = func(info trace.DriverBalancerInitStartInfo) func(trace.DriverBalancerInitDoneInfo) {
 			start := init.Start()
-			return func(info trace.DriverClusterInitDoneInfo) {
+			return func(info trace.DriverBalancerInitDoneInfo) {
 				start.Sync(nil)
 			}
 		}
-		t.OnClusterClose = func(info trace.DriverClusterCloseStartInfo) func(trace.DriverClusterCloseDoneInfo) {
+		t.OnBalancerClose = func(info trace.DriverBalancerCloseStartInfo) func(trace.DriverBalancerCloseDoneInfo) {
 			start := close.Start()
-			return func(info trace.DriverClusterCloseDoneInfo) {
+			return func(info trace.DriverBalancerCloseDoneInfo) {
 				start.Sync(info.Error)
 			}
 		}
-		t.OnClusterGet = func(info trace.DriverClusterGetStartInfo) func(trace.DriverClusterGetDoneInfo) {
-			start := get.Start(
+		t.OnBalancerUpdate = func(info trace.DriverBalancerUpdateStartInfo) func(trace.DriverBalancerUpdateDoneInfo) {
+			start := update.Start(
+				labels.Label{
+					Tag:   labels.TagDataCenter,
+					Value: "wip",
+				},
+			)
+			return func(info trace.DriverBalancerUpdateDoneInfo) {
+				start.SyncWithValue(info.Error, float64(len(info.Endpoints)),
+					labels.Label{
+						Tag:   labels.TagDataCenter,
+						Value: info.LocalDC,
+					},
+				)
+			}
+		}
+		t.OnBalancerChooseEndpoint = func(info trace.DriverBalancerChooseEndpointStartInfo) func(trace.DriverBalancerChooseEndpointDoneInfo) {
+			start := choose.Start(
 				labels.Label{
 					Tag:   labels.TagAddress,
 					Value: "wip",
@@ -229,7 +251,7 @@ func Driver(c registry.Config) (t trace.Driver) {
 					Value: "wip",
 				},
 			)
-			return func(info trace.DriverClusterGetDoneInfo) {
+			return func(info trace.DriverBalancerChooseEndpointDoneInfo) {
 				if info.Error == nil {
 					start.Sync(
 						nil,
