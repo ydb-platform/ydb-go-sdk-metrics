@@ -325,7 +325,7 @@ func Table(c registry.Config) (t trace.Table) {
 			size := scope.New(c, "size", config.New(
 				config.WithValueOnly(config.ValueTypeGauge),
 			))
-			t.OnPoolStateChange = func(info trace.TablePooStateChangeInfo) {
+			t.OnPoolStateChange = func(info trace.TablePoolStateChangeInfo) {
 				size.Start().SyncValue(float64(info.Size))
 			}
 		}
