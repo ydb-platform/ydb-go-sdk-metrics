@@ -331,19 +331,13 @@ func Table(c registry.Config) (t trace.Table) {
 		}
 		if c.Details()&trace.TablePoolSessionLifeCycleEvents != 0 {
 			c := c.WithSystem("session")
-			new := scope.New(c, "new", config.New())
-			close := scope.New(c, "close", config.New())
-			t.OnPoolSessionNew = func(info trace.TablePoolSessionNewStartInfo) func(trace.TablePoolSessionNewDoneInfo) {
-				start := new.Start()
-				return func(info trace.TablePoolSessionNewDoneInfo) {
-					start.Sync(info.Error)
-				}
+			add := scope.New(c, "add", config.New(config.WithoutError(), config.WithoutLatency()))
+			remove := scope.New(c, "remove", config.New(config.WithoutError()))
+			t.OnPoolSessionAdd = func(info trace.TablePoolSessionAddInfo) {
+				add.AddCall(nil)
 			}
-			t.OnPoolSessionClose = func(info trace.TablePoolSessionCloseStartInfo) func(trace.TablePoolSessionCloseDoneInfo) {
-				start := close.Start()
-				return func(info trace.TablePoolSessionCloseDoneInfo) {
-					start.Sync(nil)
-				}
+			t.OnPoolSessionRemove = func(info trace.TablePoolSessionRemoveInfo) {
+				remove.AddCall(nil)
 			}
 		}
 		if c.Details()&trace.TablePoolAPIEvents != 0 {
