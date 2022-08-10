@@ -42,6 +42,12 @@ func (s *callScope) Start(lbls ...labels.Label) trace.Trace {
 
 func (s *callScope) AddCall(tags map[string]string) {
 	if s.config.HasCalls() {
+		if tags == nil {
+			tags = map[string]string{
+				labels.TagSuccess: "true",
+				labels.TagVersion: trace.Version.Value,
+			}
+		}
 		s.calls.With(tags).Inc()
 	}
 }

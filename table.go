@@ -332,7 +332,7 @@ func Table(c registry.Config) (t trace.Table) {
 		if c.Details()&trace.TablePoolSessionLifeCycleEvents != 0 {
 			c := c.WithSystem("session")
 			add := scope.New(c, "add", config.New(config.WithoutError(), config.WithoutLatency()))
-			remove := scope.New(c, "remove", config.New(config.WithoutError()))
+			remove := scope.New(c, "remove", config.New(config.WithoutError(), config.WithoutLatency()))
 			t.OnPoolSessionAdd = func(info trace.TablePoolSessionAddInfo) {
 				add.AddCall(nil)
 			}
