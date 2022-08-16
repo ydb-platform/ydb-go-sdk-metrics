@@ -15,5 +15,6 @@ func WithTraces(c registry.Config) ydb.Option {
 		ydb.WithTraceCoordination(Coordination(c)),
 		ydb.WithTraceRatelimiter(Ratelimiter(c)),
 		ydb.WithTraceDiscovery(Discovery(c)),
+		ydb.WithTraceDatabaseSQL(DatabaseSQL(c)),
 	)
 }
