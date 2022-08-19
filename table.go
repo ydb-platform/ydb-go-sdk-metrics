@@ -112,21 +112,16 @@ func Table(c registry.Config) (t trace.Table) {
 		}
 		{
 			c := c.WithSystem("pool")
-			min := scope.New(c, "min", config.New(
-				config.WithValueOnly(config.ValueTypeGauge)),
-			)
 			max := scope.New(c, "max", config.New(
 				config.WithValueOnly(config.ValueTypeGauge)),
 			)
 			t.OnInit = func(info trace.TableInitStartInfo) func(trace.TableInitDoneInfo) {
 				return func(info trace.TableInitDoneInfo) {
-					min.Start().SyncValue(float64(info.KeepAliveMinSize))
 					max.Start().SyncValue(float64(info.Limit))
 				}
 			}
 			t.OnClose = func(info trace.TableCloseStartInfo) func(trace.TableCloseDoneInfo) {
 				return func(info trace.TableCloseDoneInfo) {
-					min.Start().SyncValue(0)
 					max.Start().SyncValue(0)
 				}
 			}
