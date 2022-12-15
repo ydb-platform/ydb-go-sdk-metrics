@@ -24,7 +24,7 @@ func Table(c registry.Config) (t trace.Table) {
 	if c.Details()&trace.TableEvents != 0 {
 		createSession := scope.New(c, "createSession", config.New(
 			config.WithValue(config.ValueTypeGauge)),
-			labels.TagState,
+			labels.TagStage,
 		)
 		t.OnCreateSession = func(info trace.TableCreateSessionStartInfo) func(info trace.TableCreateSessionIntermediateInfo) func(trace.TableCreateSessionDoneInfo) {
 			start := createSession.Start(labels.Label{
