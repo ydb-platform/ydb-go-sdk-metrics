@@ -31,59 +31,6 @@ var (
 // Driver makes Driver with New publishing
 func Driver(c registry.Config) (t trace.Driver) {
 	c = c.WithSystem("driver")
-	if c.Details()&trace.DriverNetEvents != 0 {
-		c := c.WithSystem("net")
-		read := scope.New(c, "read", config.New(
-			config.WithValue(config.ValueTypeHistogram),
-			config.WithValueBuckets(bytesBuckets),
-		), labels.TagAddress)
-		write := scope.New(c, "write", config.New(
-			config.WithValue(config.ValueTypeHistogram),
-			config.WithValueBuckets(bytesBuckets),
-		), labels.TagAddress)
-		dial := scope.New(c, "dial", config.New(), labels.TagAddress)
-		close := scope.New(c, "close", config.New(), labels.TagAddress)
-		t.OnNetRead = func(info trace.DriverNetReadStartInfo) func(trace.DriverNetReadDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Address,
-			}
-			start := read.Start(address)
-			return func(info trace.DriverNetReadDoneInfo) {
-				start.SyncWithValue(info.Error, float64(info.Received), address)
-			}
-		}
-		t.OnNetWrite = func(info trace.DriverNetWriteStartInfo) func(trace.DriverNetWriteDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Address,
-			}
-			start := write.Start(address)
-			return func(info trace.DriverNetWriteDoneInfo) {
-				start.SyncWithValue(info.Error, float64(info.Sent), address)
-			}
-		}
-		t.OnNetDial = func(info trace.DriverNetDialStartInfo) func(trace.DriverNetDialDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Address,
-			}
-			start := dial.Start(address)
-			return func(info trace.DriverNetDialDoneInfo) {
-				start.Sync(info.Error, address)
-			}
-		}
-		t.OnNetClose = func(info trace.DriverNetCloseStartInfo) func(trace.DriverNetCloseDoneInfo) {
-			address := labels.Label{
-				Tag:   labels.TagAddress,
-				Value: info.Address,
-			}
-			start := close.Start(address)
-			return func(info trace.DriverNetCloseDoneInfo) {
-				start.Sync(info.Error, address)
-			}
-		}
-	}
 	if c.Details()&trace.DriverRepeaterEvents != 0 {
 		repeater := scope.New(c, "repeater", config.New(), labels.TagMethod, labels.TagName)
 		t.OnRepeaterWakeUp = func(info trace.DriverRepeaterWakeUpStartInfo) func(trace.DriverRepeaterWakeUpDoneInfo) {
