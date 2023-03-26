@@ -21,13 +21,7 @@ func Retry(c registry.Config) (t trace.Retry) {
 			),
 			labels.TagIdempotent, labels.TagStage, labels.TagID,
 		)
-		t.OnRetry = func(
-			info trace.RetryLoopStartInfo,
-		) func(
-			trace.RetryLoopIntermediateInfo,
-		) func(
-			trace.RetryLoopDoneInfo,
-		) {
+		t.OnRetry = func(info trace.RetryLoopStartInfo) func(trace.RetryLoopIntermediateInfo) func(trace.RetryLoopDoneInfo) {
 			idempotent := labels.Label{
 				Tag: labels.TagIdempotent,
 				Value: func() string {

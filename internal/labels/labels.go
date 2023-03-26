@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"strconv"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3"
@@ -39,6 +40,36 @@ func KeyValue(labels ...Label) map[string]string {
 		kv[l.Tag] = l.Value
 	}
 	return kv
+}
+
+func GenerateNodeLabel(sessionID string) Label {
+	u, err := url.Parse(sessionID)
+	if err != nil {
+		panic(err)
+	}
+	return Label{TagNodeID, u.Query().Get("node_id")}
+}
+
+func GenerateErrorLabels(err error) []Label {
+	errorLabels := Err(err)
+	return append(errorLabels, Label{Tag: TagVersion, Value: ydb.Version})
+}
+
+func GenerateVersionLabel() Label {
+	return Label{Tag: TagVersion, Value: ydb.Version}
+}
+
+func GenerateIdempotentLabel(isIdempotent bool) Label {
+	var value string
+	if isIdempotent {
+		value = "true"
+	} else {
+		value = "false"
+	}
+	return Label{
+		Tag:   TagIdempotent,
+		Value: value,
+	}
 }
 
 func Err(err error, lbls ...Label) []Label {

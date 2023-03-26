@@ -1,9 +1,9 @@
 package metrics
 
 import (
-	"net/url"
-
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
+	"sync"
+	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/labels"
 	"github.com/ydb-platform/ydb-go-sdk-metrics/internal/scope"
@@ -11,309 +11,51 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk-metrics/registry"
 )
 
-func nodeID(sessionID string) string {
-	u, err := url.Parse(sessionID)
-	if err != nil {
-		panic(err)
-	}
-	return u.Query().Get("node_id")
-}
-
 func Table(c registry.Config) (t trace.Table) {
+	versionLabel := labels.GenerateVersionLabel()
+
 	c = c.WithSystem("table")
 	if c.Details()&trace.TableEvents != 0 {
-		createSession := scope.New(c, "createSession", config.New(
-			config.WithValue(config.ValueTypeGauge)),
-			labels.TagStage,
-		)
-		t.OnCreateSession = func(info trace.TableCreateSessionStartInfo) func(info trace.TableCreateSessionIntermediateInfo) func(trace.TableCreateSessionDoneInfo) {
-			start := createSession.Start(labels.Label{
-				Tag:   labels.TagStage,
-				Value: "start",
-			})
-			return func(info trace.TableCreateSessionIntermediateInfo) func(trace.TableCreateSessionDoneInfo) {
-				start.Sync(info.Error, labels.Label{
-					Tag:   labels.TagStage,
-					Value: "intermediate",
-				})
-				return func(info trace.TableCreateSessionDoneInfo) {
-					start.SyncWithValue(info.Error, float64(info.Attempts), labels.Label{
-						Tag:   labels.TagStage,
-						Value: "finish",
-					})
-				}
-			}
+		buckets := []float64{
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
 		}
-		do := scope.New(c, "do", config.New(
-			config.WithValue(config.ValueTypeHistogram),
-			config.WithValueBuckets([]float64{
-				1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
-			}),
-		), labels.TagIdempotent, labels.TagStage)
-		t.OnDo = func(info trace.TableDoStartInfo) func(info trace.TableDoIntermediateInfo) func(trace.TableDoDoneInfo) {
-			idempotent := labels.Label{
-				Tag: labels.TagIdempotent,
-				Value: func() string {
-					if info.Idempotent {
-						return "true"
-					}
-					return "false"
-				}(),
-			}
-			start := do.Start(idempotent, labels.Label{
-				Tag:   labels.TagStage,
-				Value: "init",
-			})
-			return func(info trace.TableDoIntermediateInfo) func(trace.TableDoDoneInfo) {
-				start.Sync(info.Error, idempotent, labels.Label{
-					Tag:   labels.TagStage,
-					Value: "intermediate",
-				})
-				return func(info trace.TableDoDoneInfo) {
-					start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, labels.Label{
-						Tag:   labels.TagStage,
-						Value: "finish",
-					})
-				}
-			}
-		}
-		doTx := scope.New(c, "do_tx", config.New(
-			config.WithValue(config.ValueTypeHistogram),
-			config.WithValueBuckets([]float64{
-				1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 200,
-			}),
-		), labels.TagIdempotent, labels.TagStage)
+		doTxCounterVec := c.CounterVec("tx_calls_new", labels.TagStage, labels.TagIdempotent)
+		doTxErrorsVec := c.CounterVec("tx_errors_new", labels.TagError, labels.TagErrCode, labels.TagVersion)
+		doTxAttemptsHist := c.HistogramVec("tx_attempts_new", buckets, labels.TagStage, labels.TagIdempotent)
+		doTxLatencyTimeVec := c.TimerVec("tx_latency_new", labels.TagStage, labels.TagVersion)
+
 		t.OnDoTx = func(info trace.TableDoTxStartInfo) func(info trace.TableDoTxIntermediateInfo) func(trace.TableDoTxDoneInfo) {
-			idempotent := labels.Label{
-				Tag: labels.TagIdempotent,
-				Value: func() string {
-					if info.Idempotent {
-						return "true"
-					}
-					return "false"
-				}(),
-			}
-			start := doTx.Start(idempotent, labels.Label{
-				Tag:   labels.TagStage,
-				Value: "init",
-			})
+			start := time.Now()
+			initLabel := labels.Label{Tag: labels.TagStage, Value: "init"}
+			idempotentLabel := labels.GenerateIdempotentLabel(info.Idempotent)
+			doTxCounterVec.With(labels.KeyValue(initLabel, idempotentLabel)).Inc()
 			return func(info trace.TableDoTxIntermediateInfo) func(trace.TableDoTxDoneInfo) {
-				start.Sync(info.Error, idempotent, labels.Label{
-					Tag:   labels.TagStage,
-					Value: "intermediate",
-				})
+				midLabel := labels.Label{Tag: labels.TagStage, Value: "mid"}
+				if err := info.Error; err != nil {
+					errorLabels := labels.GenerateErrorLabels(err)
+					doTxErrorsVec.With(labels.KeyValue(errorLabels...)).Inc()
+					doTxCounterVec.With(labels.KeyValue(midLabel, idempotentLabel)).Inc()
+					doTxLatencyTimeVec.With(labels.KeyValue(midLabel, versionLabel)).Record(time.Since(start))
+				} else {
+					doTxCounterVec.With(labels.KeyValue(midLabel, idempotentLabel)).Inc()
+					doTxLatencyTimeVec.With(labels.KeyValue(midLabel, versionLabel)).Record(time.Since(start))
+				}
+
 				return func(info trace.TableDoTxDoneInfo) {
-					start.SyncWithValue(info.Error, float64(info.Attempts), idempotent, labels.Label{
-						Tag:   labels.TagStage,
-						Value: "finish",
-					})
-				}
-			}
-		}
-		{
-			c := c.WithSystem("pool")
-			max := scope.New(c, "max", config.New(
-				config.WithValueOnly(config.ValueTypeGauge)),
-			)
-			t.OnInit = func(info trace.TableInitStartInfo) func(trace.TableInitDoneInfo) {
-				return func(info trace.TableInitDoneInfo) {
-					max.Start().SyncValue(float64(info.Limit))
-				}
-			}
-			t.OnClose = func(info trace.TableCloseStartInfo) func(trace.TableCloseDoneInfo) {
-				return func(info trace.TableCloseDoneInfo) {
-					max.Start().SyncValue(0)
+					finalLabel := labels.Label{Tag: labels.TagStage, Value: "final"}
+					if err := info.Error; err != nil {
+						errorLabels := labels.GenerateErrorLabels(err)
+						doTxErrorsVec.With(labels.KeyValue(errorLabels...)).Inc()
+						doTxCounterVec.With(labels.KeyValue(finalLabel, idempotentLabel)).Inc()
+					} else {
+						doTxCounterVec.With(labels.KeyValue(idempotentLabel, finalLabel)).Inc()
+						doTxAttemptsHist.With(labels.KeyValue(idempotentLabel, finalLabel)).Record(float64(info.Attempts))
+					}
 				}
 			}
 		}
 	}
-	if c.Details()&trace.TableSessionEvents != 0 {
-		c := c.WithSystem("session")
-		if c.Details()&trace.TableSessionLifeCycleEvents != 0 {
-			new := scope.New(c, "new", config.New(), labels.TagNodeID)
-			delete := scope.New(c, "delete", config.New(), labels.TagNodeID)
-			keepAlive := scope.New(c, "keep_alive", config.New(), labels.TagNodeID)
-			t.OnSessionNew = func(info trace.TableSessionNewStartInfo) func(trace.TableSessionNewDoneInfo) {
-				start := new.Start(labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: "wip",
-				})
-				return func(info trace.TableSessionNewDoneInfo) {
-					nodeID := labels.Label{
-						Tag: labels.TagNodeID,
-						Value: func() string {
-							if info.Session != nil {
-								return nodeID(info.Session.ID())
-							}
-							return ""
-						}(),
-					}
-					start.Sync(info.Error, nodeID)
-				}
-			}
-			t.OnSessionDelete = func(info trace.TableSessionDeleteStartInfo) func(trace.TableSessionDeleteDoneInfo) {
-				nodeID := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: nodeID(info.Session.ID()),
-				}
-				start := delete.Start(nodeID)
-				return func(info trace.TableSessionDeleteDoneInfo) {
-					start.Sync(info.Error, nodeID)
-				}
-			}
-			t.OnSessionKeepAlive = func(info trace.TableKeepAliveStartInfo) func(trace.TableKeepAliveDoneInfo) {
-				nodeID := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: nodeID(info.Session.ID()),
-				}
-				start := keepAlive.Start(nodeID)
-				return func(info trace.TableKeepAliveDoneInfo) {
-					start.Sync(info.Error, nodeID)
-				}
-			}
-		}
-		if c.Details()&trace.TableSessionQueryEvents != 0 {
-			c := c.WithSystem("query")
-			if c.Details()&trace.TableSessionQueryInvokeEvents != 0 {
-				c := c.WithSystem("invoke")
-				prepare := scope.New(c, "prepare", config.New(), labels.TagNodeID)
-				execute := scope.New(c, "execute", config.New(), labels.TagNodeID)
-				t.OnSessionQueryPrepare = func(
-					info trace.TablePrepareDataQueryStartInfo,
-				) func(
-					trace.TablePrepareDataQueryDoneInfo,
-				) {
-					nodeID := labels.Label{
-						Tag:   labels.TagNodeID,
-						Value: nodeID(info.Session.ID()),
-					}
-					start := prepare.Start(nodeID)
-					return func(info trace.TablePrepareDataQueryDoneInfo) {
-						start.Sync(info.Error, nodeID)
-					}
-				}
-				t.OnSessionQueryExecute = func(
-					info trace.TableExecuteDataQueryStartInfo,
-				) func(
-					trace.TableExecuteDataQueryDoneInfo,
-				) {
-					nodeID := labels.Label{
-						Tag:   labels.TagNodeID,
-						Value: nodeID(info.Session.ID()),
-					}
-					start := execute.Start(nodeID)
-					return func(info trace.TableExecuteDataQueryDoneInfo) {
-						start.Sync(info.Error, nodeID)
-					}
-				}
-			}
-			if c.Details()&trace.TableSessionQueryStreamEvents != 0 {
-				c := c.WithSystem("stream")
-				read := scope.New(c, "read", config.New(), labels.TagStage, labels.TagNodeID)
-				execute := scope.New(c, "execute", config.New(), labels.TagStage, labels.TagNodeID)
-				t.OnSessionQueryStreamExecute = func(
-					info trace.TableSessionQueryStreamExecuteStartInfo,
-				) func(
-					trace.TableSessionQueryStreamExecuteIntermediateInfo,
-				) func(
-					trace.TableSessionQueryStreamExecuteDoneInfo,
-				) {
-					nodeID := labels.Label{
-						Tag:   labels.TagNodeID,
-						Value: nodeID(info.Session.ID()),
-					}
-					start := execute.Start(nodeID, labels.Label{
-						Tag:   labels.TagStage,
-						Value: "init",
-					})
-					return func(
-						info trace.TableSessionQueryStreamExecuteIntermediateInfo,
-					) func(
-						trace.TableSessionQueryStreamExecuteDoneInfo,
-					) {
-						start.Sync(info.Error, nodeID, labels.Label{
-							Tag:   labels.TagStage,
-							Value: "intermediate",
-						})
-						return func(info trace.TableSessionQueryStreamExecuteDoneInfo) {
-							start.Sync(info.Error, nodeID, labels.Label{
-								Tag:   labels.TagStage,
-								Value: "finish",
-							})
-						}
-					}
-				}
-				t.OnSessionQueryStreamRead = func(
-					info trace.TableSessionQueryStreamReadStartInfo,
-				) func(
-					trace.TableSessionQueryStreamReadIntermediateInfo,
-				) func(
-					trace.TableSessionQueryStreamReadDoneInfo,
-				) {
-					nodeID := labels.Label{
-						Tag:   labels.TagNodeID,
-						Value: nodeID(info.Session.ID()),
-					}
-					start := read.Start(nodeID, labels.Label{
-						Tag:   labels.TagStage,
-						Value: "init",
-					})
-					return func(
-						info trace.TableSessionQueryStreamReadIntermediateInfo,
-					) func(
-						trace.TableSessionQueryStreamReadDoneInfo,
-					) {
-						start.Sync(info.Error, nodeID, labels.Label{
-							Tag:   labels.TagStage,
-							Value: "intermediate",
-						})
-						return func(info trace.TableSessionQueryStreamReadDoneInfo) {
-							start.Sync(info.Error, nodeID, labels.Label{
-								Tag:   labels.TagStage,
-								Value: "finish",
-							})
-						}
-					}
-				}
-			}
-		}
-		if c.Details()&trace.TableSessionTransactionEvents != 0 {
-			c := c.WithSystem("transaction")
-			begin := scope.New(c, "begin", config.New(), labels.TagNodeID)
-			commit := scope.New(c, "commit", config.New(), labels.TagNodeID)
-			rollback := scope.New(c, "rollback", config.New(), labels.TagNodeID)
-			t.OnSessionTransactionBegin = func(info trace.TableSessionTransactionBeginStartInfo) func(trace.TableSessionTransactionBeginDoneInfo) {
-				nodeID := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: nodeID(info.Session.ID()),
-				}
-				start := begin.Start(nodeID)
-				return func(info trace.TableSessionTransactionBeginDoneInfo) {
-					start.Sync(info.Error, nodeID)
-				}
-			}
-			t.OnSessionTransactionCommit = func(info trace.TableSessionTransactionCommitStartInfo) func(trace.TableSessionTransactionCommitDoneInfo) {
-				nodeID := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: nodeID(info.Session.ID()),
-				}
-				start := commit.Start(nodeID)
-				return func(info trace.TableSessionTransactionCommitDoneInfo) {
-					start.Sync(info.Error, nodeID)
-				}
-			}
-			t.OnSessionTransactionRollback = func(info trace.TableSessionTransactionRollbackStartInfo) func(trace.TableSessionTransactionRollbackDoneInfo) {
-				nodeID := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: nodeID(info.Session.ID()),
-				}
-				start := rollback.Start(nodeID)
-				return func(info trace.TableSessionTransactionRollbackDoneInfo) {
-					start.Sync(info.Error, nodeID)
-				}
-			}
-		}
-	}
+
 	if c.Details()&trace.TablePoolEvents != 0 {
 		c := c.WithSystem("pool")
 		if c.Details()&trace.TablePoolLifeCycleEvents != 0 {
@@ -336,54 +78,90 @@ func Table(c registry.Config) (t trace.Table) {
 			}
 		}
 		if c.Details()&trace.TablePoolAPIEvents != 0 {
-			put := scope.New(c, "put", config.New(), labels.TagNodeID)
-			get := scope.New(c, "get", config.New(), labels.TagNodeID)
-			wait := scope.New(c, "wait", config.New(), labels.TagNodeID)
-			t.OnPoolPut = func(info trace.TablePoolPutStartInfo) func(trace.TablePoolPutDoneInfo) {
-				nodeID := labels.Label{
-					Tag: labels.TagNodeID,
-					Value: func() string {
-						if info.Session != nil {
-							return nodeID(info.Session.ID())
-						}
-						return ""
-					}(),
-				}
-				start := put.Start(nodeID)
-				return func(info trace.TablePoolPutDoneInfo) {
-					start.Sync(info.Error, nodeID)
+			//poolIdleGauge := c.GaugeVec("pool_idle_new")
+
+			// Pool limit
+			poolLimitGauge := c.GaugeVec("pool_limit_new")
+			t.OnInit = func(info trace.TableInitStartInfo) func(trace.TableInitDoneInfo) {
+				return func(info trace.TableInitDoneInfo) {
+					poolLimitGauge.With(labels.KeyValue()).Set(float64(info.Limit))
 				}
 			}
+			t.OnClose = func(info trace.TableCloseStartInfo) func(trace.TableCloseDoneInfo) {
+				return func(info trace.TableCloseDoneInfo) {
+					poolLimitGauge.With(labels.KeyValue()).Set(0)
+				}
+			}
+
+			//Pool Size
+			poolSizeGauge := c.GaugeVec("pool_size_new", labels.TagNodeID, labels.TagVersion)
+			poolSizeMutex := sync.Mutex{}
+			t.OnPoolSessionAdd = func(info trace.TablePoolSessionAddInfo) {
+				poolSizeMutex.Lock()
+				defer poolSizeMutex.Unlock()
+				nodeLabel := labels.GenerateNodeLabel(info.Session.ID())
+				poolSizeGauge.With(labels.KeyValue(nodeLabel, versionLabel)).Add(1)
+			}
+			t.OnPoolSessionRemove = func(info trace.TablePoolSessionRemoveInfo) {
+				poolSizeMutex.Lock()
+				defer poolSizeMutex.Unlock()
+				nodeLabel := labels.GenerateNodeLabel(info.Session.ID())
+				poolSizeGauge.With(labels.KeyValue(nodeLabel, versionLabel)).Add(-1)
+			}
+
+			//Inflight sessions
+			poolInflightGauge := c.GaugeVec("pool_inflight_new", labels.TagNodeID)
+			poolInflightErrorGauge := c.CounterVec("pool_inflight_error_new", labels.TagNodeID, labels.TagError,
+				labels.TagErrCode, labels.TagVersion)
+			poolInflightMutex := sync.Mutex{}
 			t.OnPoolGet = func(info trace.TablePoolGetStartInfo) func(trace.TablePoolGetDoneInfo) {
-				node := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: "wip",
-				}
-				start := get.Start(node)
 				return func(info trace.TablePoolGetDoneInfo) {
-					node.Value = func() string {
-						if info.Session != nil {
-							return nodeID(info.Session.ID())
-						}
-						return ""
-					}()
-					start.SyncWithValue(info.Error, float64(info.Attempts), node)
+					poolInflightMutex.Lock()
+					defer poolInflightMutex.Unlock()
+					nodeLabel := labels.GenerateNodeLabel(info.Session.ID())
+					if err := info.Error; err != nil {
+						poolInflightMutex.Lock()
+						defer poolInflightMutex.Unlock()
+						errLabels := labels.Err(err, nodeLabel, versionLabel)
+						poolInflightErrorGauge.With(labels.KeyValue(errLabels...)).Inc()
+					} else {
+						poolInflightGauge.With(labels.KeyValue(nodeLabel)).Add(1)
+					}
 				}
 			}
-			t.OnPoolWait = func(info trace.TablePoolWaitStartInfo) func(trace.TablePoolWaitDoneInfo) {
-				node := labels.Label{
-					Tag:   labels.TagNodeID,
-					Value: "wip",
+			t.OnPoolPut = func(info trace.TablePoolPutStartInfo) func(trace.TablePoolPutDoneInfo) {
+				nodeLabel := labels.GenerateNodeLabel(info.Session.ID())
+				return func(info trace.TablePoolPutDoneInfo) {
+					poolInflightMutex.Lock()
+					defer poolInflightMutex.Unlock()
+					if err := info.Error; err != nil {
+						poolInflightMutex.Lock()
+						defer poolInflightMutex.Unlock()
+						errLabels := labels.Err(err, nodeLabel, versionLabel)
+						poolInflightErrorGauge.With(labels.KeyValue(errLabels...)).Inc()
+					} else {
+						poolInflightGauge.With(labels.KeyValue(nodeLabel)).Add(-1)
+					}
 				}
-				start := wait.Start(node)
+			}
+
+			//Queue sessions
+			poolQueueGauge := c.GaugeVec("pool_queue_new")
+			poolQueueErrorCounter := c.CounterVec("pool_queue_error_new", labels.TagError, labels.TagErrCode,
+				labels.TagVersion)
+			poolQueueMutex := sync.Mutex{}
+			t.OnPoolWait = func(info trace.TablePoolWaitStartInfo) func(trace.TablePoolWaitDoneInfo) {
+				poolQueueMutex.Lock()
+				defer poolQueueMutex.Unlock()
+				poolQueueGauge.With(labels.KeyValue()).Add(1)
 				return func(info trace.TablePoolWaitDoneInfo) {
-					node.Value = func() string {
-						if info.Session != nil {
-							return nodeID(info.Session.ID())
-						}
-						return "-"
-					}()
-					start.Sync(info.Error, node)
+					poolQueueMutex.Lock()
+					defer poolQueueMutex.Unlock()
+					if err := info.Error; err != nil {
+						errLabels := labels.Err(err, versionLabel)
+						poolQueueErrorCounter.With(labels.KeyValue(errLabels...)).Inc()
+					}
+					poolQueueGauge.With(labels.KeyValue()).Add(-1)
 				}
 			}
 		}
