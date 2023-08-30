@@ -80,6 +80,8 @@ func DatabaseSQL(c registry.Config) (t trace.DatabaseSQL) {
 		c := c.WithSystem("tx")
 		commit := scope.New(c, "commit", config.New())
 		rollback := scope.New(c, "rollback", config.New())
+		query := scope.New(c, "query", config.New())
+		exec := scope.New(c, "exec", config.New())
 		t.OnTxCommit = func(info trace.DatabaseSQLTxCommitStartInfo) func(trace.DatabaseSQLTxCommitDoneInfo) {
 			start := commit.Start()
 			return func(info trace.DatabaseSQLTxCommitDoneInfo) {
@@ -89,6 +91,18 @@ func DatabaseSQL(c registry.Config) (t trace.DatabaseSQL) {
 		t.OnTxRollback = func(info trace.DatabaseSQLTxRollbackStartInfo) func(trace.DatabaseSQLTxRollbackDoneInfo) {
 			start := rollback.Start()
 			return func(info trace.DatabaseSQLTxRollbackDoneInfo) {
+				start.Sync(info.Error)
+			}
+		}
+		t.OnTxQuery = func(info trace.DatabaseSQLTxQueryStartInfo) func(trace.DatabaseSQLTxQueryDoneInfo) {
+			start := query.Start()
+			return func(info trace.DatabaseSQLTxQueryDoneInfo) {
+				start.Sync(info.Error)
+			}
+		}
+		t.OnTxExec = func(info trace.DatabaseSQLTxExecStartInfo) func(trace.DatabaseSQLTxExecDoneInfo) {
+			start := exec.Start()
+			return func(info trace.DatabaseSQLTxExecDoneInfo) {
 				start.Sync(info.Error)
 			}
 		}
